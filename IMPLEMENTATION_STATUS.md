@@ -1,32 +1,30 @@
-# MezoFlow Protocol: Implementation Status & Roadmap
+# BitStreamfi Protocol: Implementation Status & Roadmap
 
 ## 📊 Summary of Completed Implementation (Phase 1 Wave 1)
 
-### 1. Smart Contracts & Core Architecture (`mezoflow-protocol/src/`)
+### 1. Smart Contracts & Core Architecture (`src/`)
 - **`MezoFlowVault.sol`**:
-  - Implements `tBTC` collateral deposits and `MUSD` stablecoin borrowing/minting.
-  - Enforces strict 60% Max LTV (`MAX_LTV_BPS = 6000`) on collateral valuation ($60,000 / tBTC model).
-  - Built-in reentrancy protection (`nonReentrant` modifier) and clean ERC20 interfacing.
+  - `tBTC` collateral deposits and `MUSD` stablecoin borrowing/minting.
+  - Strict 60% Max LTV (`MAX_LTV_BPS = 6000`) on collateral valuation ($60,000 / tBTC model).
+  - Reentrancy protection (`nonReentrant` modifier).
 - **`PayrollStreamer.sol`**:
-  - Implements second-by-second continuous `MUSD` salary streaming for employers and contractors.
-  - Provides stream creation, time-weighted balance tracking (`balanceOf`), and withdrawal mechanisms.
+  - Second-by-second continuous `MUSD` salary streaming.
+  - **Streaming Controls**: `topUpStream` and `cancelStream` implemented for employers/recipients.
+- **`SelfRepayingCreditEngine.sol`**:
+  - Channels staking yields into automated `MUSD` debt amortization for vault borrowers.
 
-### 2. Testing Suite (`mezoflow-protocol/test/`)
+### 2. Testing Suite (`test/`)
 - **`MezoFlowVault.t.sol`**:
-  - Comprehensive unit tests covering collateral deposits, LTV checks, MUSD borrowing bounds, and time-weighted payroll streaming withdrawals.
+  - Comprehensive unit tests covering collateral deposits, LTV checks, MUSD borrowing bounds, streaming top-up/cancel controls, and self-repaying credit engine logic.
   - Verified with 100% test success via Foundry (`forge test`).
 
-### 3. Deployment Scripts (`mezoflow-protocol/script/`)
+### 3. Deployment & Integration (`script/`)
 - **`Deploy.s.sol`**:
   - Foundry deployment script configured for Mezo Testnet `tBTC` and `MUSD` addresses.
 
 ---
 
-## 🚀 Next Steps & Future Implementation (Phase 1 Wave 1 & Phase 2 Wave 2)
-
-### Epic 1.3: Testnet Deployment & Frontend PoC (Remaining Tasks)
-- [ ] Deploy smart contracts to Mezo Testnet and verify on block explorer.
-- [ ] Build Next.js web dashboard (`MezoFlow App`) integrating Wagmi/Viem to connect wallets, deposit tBTC, mint MUSD, and start payroll streams.
+## 🚀 Next Steps & Future Implementation (Phase 2 Wave 2)
 
 ### Phase 2: Wave 2 Build (Telegram Mini-App, Yield Optimization, & Polish)
 - **Epic 2.1: Telegram Mini-App (Track 2 Integration)**

@@ -8,7 +8,7 @@ interface IERC20Stream {
 
 /**
  * @title PayrollStreamer
- * @notice Second-by-second MUSD salary streaming for employers and contractors.
+ * @notice Second-by-second MUSD salary streaming for employers and contractors with streaming controls.
  */
 contract PayrollStreamer {
     struct Stream {
@@ -27,7 +27,8 @@ contract PayrollStreamer {
 
     event StreamCreated(uint256 indexed streamId, address indexed employer, address indexed recipient, uint256 depositAmount);
     event StreamWithdrawn(uint256 indexed streamId, uint256 amount);
-    event StreamCancelled(uint256 indexed streamId);
+    event StreamCancelled(uint256 indexed streamId, uint256 refundToEmployer, uint256 paidToRecipient);
+    event StreamToppedUp(uint256 indexed streamId, uint256 addedAmount);
 
     constructor(address _musd) {
         musdToken = _musd;
@@ -57,6 +58,43 @@ contract PayrollStreamer {
 
         emit StreamCreated(streamId, msg.sender, recipient, depositAmount);
         return streamId;
+    }
+
+    function topUpStream(uint256 streamId, uint256 additionalAmount) external {
+        Stream storage stream = streams[streamId];
+        require(stream.active, "Stream not active");
+        require(msg.sender == stream.employer, "Not employer");
+        require(additionalAmount > 0, "Amount must be > 0");
+
+        stream.depositAmount += additionalAmount;
+
+        bool success = IERC20Stream(musdToken).transferFrom(msg.sender, address(this), additionalAmount);
+        require(success, "TransferFrom failed");
+
+        emit StreamToppedUp(streamId, additionalAmount);
+    }
+
+    function cancelStream(uint256 streamId) external {
+        Stream storage stream = streams[streamId];
+        require(stream.active, "Stream not active");
+        require(msg.sender == stream.employer || msg.sender == stream.recipient, "Not authorized");
+
+        uint256 streamable = balanceOf(streamId);
+        uint256 totalOwed = stream.withdrawnAmount + streamable;
+        uint256 refund = stream.depositAmount > totalOwed ? stream.depositAmount - totalOwed : 0;
+
+        stream.active = false;
+
+        if (streamable > 0) {
+            stream.withdrawnAmount += streamable;
+            require(IERC20Stream(musdToken).transfer(stream.recipient, streamable), "Transfer to recipient failed");
+        }
+
+        if (refund > 0) {
+            require(IERC20Stream(musdToken).transfer(stream.employer, refund), "Refund to employer failed");
+        }
+
+        emit StreamCancelled(streamId, refund, streamable);
     }
 
     function withdrawFromStream(uint256 streamId) external {
