@@ -1,0 +1,14 @@
+research_docs/
+akindo_*.png
+akindo_*.txt
+*.png
+*.txt
+*.py
+project_page.html
+project_details.txt
+.DS_Store
+cache/
+out/
+lib/
+.gas-snapshot
+.sourcemaps
