@@ -20,7 +20,10 @@
 
 ### 3. Deployment & Integration (`script/`)
 - **`Deploy.s.sol`**:
-  - Foundry deployment script configured for Mezo Testnet `tBTC` and `MUSD` addresses.
+  - Successfully deployed to Mezo Testnet (Chain 31611):
+    - **MezoFlowVault**: `0x34623FB11C65E2Cab4d252460AF1DC0F36ba9D20`
+    - **PayrollStreamer**: `0x0486bbfC22AA66F61A9fa1c35e221DfB19de6d93`
+    - **SelfRepayingCreditEngine**: `0x625Cf421C9D7B58E747cf7D6301bdb3f235524f0`
 
 ---
 

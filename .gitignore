@@ -12,3 +12,4 @@ out/
 lib/
 .gas-snapshot
 .sourcemaps
+.private_key
