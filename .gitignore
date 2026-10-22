@@ -2,10 +2,13 @@ research_docs/
 akindo_*.png
 akindo_*.txt
 *.png
+*.jpg
+*.jpeg
 *.txt
 *.py
 project_page.html
 project_details.txt
+bitstreamfi-*.html
 .DS_Store
 cache/
 out/
@@ -13,3 +16,12 @@ lib/
 .gas-snapshot
 .sourcemaps
 .private_key
+research
+AGENT.md
+vault-build/
+node_modules/
+package.json
+package-lock.json
+.agents/
+skills-lock.json
+
