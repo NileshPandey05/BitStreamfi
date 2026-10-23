@@ -665,7 +665,9 @@ export default function Home() {
             <span>Mezo Testnet (31611)</span>
           </div>
 
-          {isConnected ? (
+          {!mounted ? (
+            <div className="h-10 w-32 bg-[#DEDBD3]/40 rounded-xl animate-pulse"></div>
+          ) : isConnected ? (
             <div className="flex items-center space-x-3 bg-[#F6F4EF] px-4 py-2 rounded-xl border border-[#DEDBD3] shadow-sm">
               <span className="w-2.5 h-2.5 rounded-full bg-[#258454]"></span>
               <span className="text-xs font-mono font-medium text-[#171715]">
