@@ -4,12 +4,65 @@ export const CONTRACT_ADDRESSES = {
   vault: "0x34623FB11C65E2Cab4d252460AF1DC0F36ba9D20" as const,
   streamer: "0x0486bbfC22AA66F61A9fa1c35e221DfB19de6d93" as const,
   creditEngine: "0x625Cf421C9D7B58E747cf7D6301bdb3f235524f0" as const,
+  tbtc: "0x1234567890123456789012345678901234567890" as const,
+  musd: "0x0987654321098765432109876543210987654321" as const,
 };
+
+export const ERC20_ABI = [
+  {
+    type: "function",
+    name: "balanceOf",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "allowance",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "approve",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "decimals",
+    inputs: [],
+    outputs: [{ name: "", type: "uint8" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "symbol",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+    stateMutability: "view",
+  },
+] as const;
 
 export const VAULT_ABI = [
   {
     type: "function",
     name: "depositCollateral",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "withdrawCollateral",
     inputs: [{ name: "amount", type: "uint256" }],
     outputs: [],
     stateMutability: "nonpayable",
@@ -37,16 +90,37 @@ export const VAULT_ABI = [
   },
   {
     type: "function",
-    name: "debtBalances",
+    name: "borrowedMUSD",
     inputs: [{ name: "", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
   },
   {
     type: "function",
-    name: "getCurrentLTV",
-    inputs: [{ name: "user", type: "address" }],
+    name: "MAX_LTV_BPS",
+    inputs: [],
     outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "BPS_DENOMINATOR",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "tbtcToken",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "musdToken",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
     stateMutability: "view",
   },
 ] as const;
@@ -60,7 +134,7 @@ export const STREAMER_ABI = [
       { name: "depositAmount", type: "uint256" },
       { name: "duration", type: "uint256" },
     ],
-    outputs: [],
+    outputs: [{ name: "", type: "uint256" }],
     stateMutability: "nonpayable",
   },
   {
@@ -90,10 +164,7 @@ export const STREAMER_ABI = [
   {
     type: "function",
     name: "balanceOf",
-    inputs: [
-      { name: "streamId", type: "uint256" },
-      { name: "account", type: "address" },
-    ],
+    inputs: [{ name: "streamId", type: "uint256" }],
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
   },
@@ -104,12 +175,19 @@ export const STREAMER_ABI = [
     outputs: [
       { name: "employer", type: "address" },
       { name: "recipient", type: "address" },
-      { name: "deposit", type: "uint256" },
-      { name: "withdrawn", type: "uint256" },
+      { name: "depositAmount", type: "uint256" },
       { name: "startTime", type: "uint256" },
       { name: "stopTime", type: "uint256" },
-      { name: "isCancelled", type: "bool" },
+      { name: "withdrawnAmount", type: "uint256" },
+      { name: "active", type: "bool" },
     ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "nextStreamId",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
   },
 ] as const;
@@ -126,6 +204,16 @@ export const CREDIT_ENGINE_ABI = [
     type: "function",
     name: "depositYield",
     inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "amortizeDebt",
+    inputs: [
+      { name: "user", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
     outputs: [],
     stateMutability: "nonpayable",
   },

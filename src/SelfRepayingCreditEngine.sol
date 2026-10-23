@@ -3,12 +3,13 @@ pragma solidity ^0.8.20;
 
 interface IVault {
     function borrowedMUSD(address user) external view returns (uint256);
-    function repayMUSD(uint256 amount) external;
+    function repayMUSDFor(address user, uint256 amount) external;
 }
 
 interface IERC20Engine {
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
     function transfer(address recipient, uint256 amount) external returns (bool);
+    function approve(address spender, uint256 amount) external returns (bool);
 }
 
 /**
@@ -44,7 +45,8 @@ contract SelfRepayingCreditEngine {
         stakingYieldBalances[user] -= amount;
 
         // Repay debt on behalf of user
-        IVault(vault).repayMUSD(amount);
+        IERC20Engine(musdToken).approve(vault, amount);
+        IVault(vault).repayMUSDFor(user, amount);
         emit DebtAmortized(user, amount);
     }
 }

@@ -3,8 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAccount, useConnect, useDisconnect, useReadContract, useWriteContract, useChainId, useSwitchChain } from 'wagmi';
-import { CONTRACT_ADDRESSES, MEZO_TESTNET_CHAIN_ID, VAULT_ABI, STREAMER_ABI, CREDIT_ENGINE_ABI } from './contracts';
-import { parseEther, formatEther } from 'viem';
+import { CONTRACT_ADDRESSES, MEZO_TESTNET_CHAIN_ID, VAULT_ABI, STREAMER_ABI, CREDIT_ENGINE_ABI, ERC20_ABI } from './contracts';
+import { parseEther, formatEther, isAddress } from 'viem';
 import { Shield, Zap, DollarSign, Clock, Wallet, ArrowUpRight, PlusCircle, XCircle, Activity, ChevronRight, CheckCircle2, RefreshCw, AlertTriangle, ExternalLink, Layers } from 'lucide-react';
 
 interface TransactionRecord {
@@ -47,6 +47,15 @@ export default function Home() {
   const [collateralAmount, setCollateralAmount] = useState('');
   const [borrowAmount, setBorrowAmount] = useState('');
   const [repayAmount, setRepayAmount] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [yieldDepositAmount, setYieldDepositAmount] = useState('');
+  const [amortizeAmount, setAmortizeAmount] = useState('');
+  const [showWalletModal, setShowWalletModal] = useState(false);
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Payroll form states
   const [recipient, setRecipient] = useState('');
@@ -58,6 +67,7 @@ export default function Home() {
   // Wagmi write hooks
   const { writeContract: writeVault, isPending: vaultPending } = useWriteContract();
   const { writeContract: writeStreamer, isPending: streamerPending } = useWriteContract();
+  const { writeContract: writeGeneric, isPending: genericPending } = useWriteContract();
 
   // Read Vault Data
   const { data: userCollateral, refetch: refetchCollateral } = useReadContract({
@@ -70,16 +80,43 @@ export default function Home() {
   const { data: userDebt, refetch: refetchDebt } = useReadContract({
     address: CONTRACT_ADDRESSES.vault,
     abi: VAULT_ABI,
-    functionName: 'debtBalances',
+    functionName: 'borrowedMUSD',
     args: address ? [address] : undefined,
   });
 
-  const { data: currentLTV, refetch: refetchLTV } = useReadContract({
-    address: CONTRACT_ADDRESSES.vault,
-    abi: VAULT_ABI,
-    functionName: 'getCurrentLTV',
+  // Token & Engine Balances
+  const { data: tbtcBalance, refetch: refetchTbtc } = useReadContract({
+    address: CONTRACT_ADDRESSES.tbtc,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
     args: address ? [address] : undefined,
   });
+
+  const { data: musdBalance, refetch: refetchMusd } = useReadContract({
+    address: CONTRACT_ADDRESSES.musd,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+  });
+
+  const { data: yieldBalance, refetch: refetchYield } = useReadContract({
+    address: CONTRACT_ADDRESSES.creditEngine,
+    abi: CREDIT_ENGINE_ABI,
+    functionName: 'stakingYieldBalances',
+    args: address ? [address] : undefined,
+  });
+
+  // Derived Position Metrics (1 tBTC = $60,000, Max LTV = 60%)
+  const collateralEth = userCollateral ? Number(formatEther(userCollateral as bigint)) : 0;
+  const debtEth = userDebt ? Number(formatEther(userDebt as bigint)) : 0;
+  const collateralValueUSD = collateralEth * 60000;
+  const maxBorrowUSD = collateralValueUSD * 0.6;
+  const availableBorrowUSD = Math.max(0, maxBorrowUSD - debtEth);
+  const ltvNumeric = collateralValueUSD > 0 ? (debtEth / collateralValueUSD) * 100 : 0;
+  const minCollateralRequiredUSD = debtEth / 0.6;
+  const minCollateralRequiredEth = debtEth > 0 ? minCollateralRequiredUSD / 60000 : 0;
+  const maxWithdrawableEth = Math.max(0, collateralEth - minCollateralRequiredEth);
+  const ltvStatusColor = ltvNumeric > 55 ? 'text-[#C7473A]' : ltvNumeric > 45 ? 'text-[#B7791F]' : 'text-[#258454]';
 
   // Read Stream Data
   const { data: streamData, refetch: refetchStream } = useReadContract({
@@ -91,10 +128,56 @@ export default function Home() {
 
   const isWrongNetwork = isConnected && chainId !== MEZO_TESTNET_CHAIN_ID;
 
+  // ERC-20 Approval Handler
+  const handleApprove = (token: 'tbtc' | 'musd', spender: 'vault' | 'streamer' | 'creditEngine', amountStr: string) => {
+    if (isWrongNetwork || !amountStr || Number(amountStr) <= 0) return;
+    setTxStatus('wallet_confirm');
+    setStatusMessage(`Approving ${token.toUpperCase()} for ${spender}...`);
+
+    const tokenAddress = token === 'tbtc' ? CONTRACT_ADDRESSES.tbtc : CONTRACT_ADDRESSES.musd;
+    const spenderAddress = CONTRACT_ADDRESSES[spender];
+
+    writeGeneric(
+      {
+        address: tokenAddress,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [spenderAddress, parseEther(amountStr)],
+      },
+      {
+        onSuccess: (hash) => {
+          setTxStatus('pending');
+          setStatusMessage('Approval transaction broadcasted...');
+          setTimeout(() => {
+            setTxStatus('success');
+            setStatusMessage(`Approved ${amountStr} ${token.toUpperCase()}`);
+            setTransactions(prev => [{ hash: hash.slice(0, 10) + '...', type: `Approve ${token.toUpperCase()}`, amount: `${amountStr} ${token.toUpperCase()}`, status: 'success', timestamp: 'Just now' }, ...prev]);
+          }, 3000);
+        },
+        onError: (err) => {
+          setTxStatus('failed');
+          setStatusMessage(err.message || 'Approval failed.');
+        }
+      }
+    );
+  };
+
   // Vault Actions
   const handleDepositCollateral = (e: React.FormEvent) => {
     e.preventDefault();
     if (!collateralAmount || isWrongNetwork) return;
+    const amountNum = Number(collateralAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Please enter a valid deposit amount > 0');
+      return;
+    }
+    const tbtcBalNum = tbtcBalance ? Number(formatEther(tbtcBalance as bigint)) : 0;
+    if (amountNum > tbtcBalNum) {
+      setTxStatus('failed');
+      setStatusMessage(`Insufficient tBTC balance (${tbtcBalNum.toFixed(4)} available).`);
+      return;
+    }
     setTxStatus('wallet_confirm');
     setStatusMessage('Confirm transaction in wallet...');
 
@@ -114,7 +197,7 @@ export default function Home() {
             setStatusMessage(`Successfully deposited ${collateralAmount} tBTC`);
             setTransactions(prev => [{ hash: hash.slice(0, 10) + '...', type: 'Deposit tBTC', amount: `${collateralAmount} tBTC`, status: 'success', timestamp: 'Just now' }, ...prev]);
             refetchCollateral();
-            refetchLTV();
+            refetchTbtc();
           }, 3000);
         },
         onError: (err) => {
@@ -128,6 +211,17 @@ export default function Home() {
   const handleBorrowMUSD = (e: React.FormEvent) => {
     e.preventDefault();
     if (!borrowAmount || isWrongNetwork) return;
+    const amountNum = Number(borrowAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Please enter a valid borrow amount > 0');
+      return;
+    }
+    if (amountNum > availableBorrowUSD) {
+      setTxStatus('failed');
+      setStatusMessage(`Borrow exceeds max 60% LTV ($${availableBorrowUSD.toFixed(2)} MUSD available).`);
+      return;
+    }
     setTxStatus('wallet_confirm');
     setStatusMessage('Confirm borrow request in wallet...');
 
@@ -147,7 +241,7 @@ export default function Home() {
             setStatusMessage(`Successfully borrowed ${borrowAmount} MUSD`);
             setTransactions(prev => [{ hash: hash.slice(0, 10) + '...', type: 'Borrow MUSD', amount: `${borrowAmount} MUSD`, status: 'success', timestamp: 'Just now' }, ...prev]);
             refetchDebt();
-            refetchLTV();
+            refetchMusd();
           }, 3000);
         },
         onError: (err) => {
@@ -161,6 +255,23 @@ export default function Home() {
   const handleRepayMUSD = (e: React.FormEvent) => {
     e.preventDefault();
     if (!repayAmount || isWrongNetwork) return;
+    const amountNum = Number(repayAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Please enter a valid repay amount > 0');
+      return;
+    }
+    const musdBalNum = musdBalance ? Number(formatEther(musdBalance as bigint)) : 0;
+    if (amountNum > musdBalNum) {
+      setTxStatus('failed');
+      setStatusMessage(`Insufficient MUSD balance (${musdBalNum.toLocaleString()} available).`);
+      return;
+    }
+    if (amountNum > debtEth) {
+      setTxStatus('failed');
+      setStatusMessage(`Repay amount exceeds total outstanding debt (${debtEth.toLocaleString()} MUSD).`);
+      return;
+    }
     setTxStatus('wallet_confirm');
     setStatusMessage('Confirm repayment in wallet...');
 
@@ -180,7 +291,7 @@ export default function Home() {
             setStatusMessage(`Successfully repaid ${repayAmount} MUSD`);
             setTransactions(prev => [{ hash: hash.slice(0, 10) + '...', type: 'Repay MUSD', amount: `${repayAmount} MUSD`, status: 'success', timestamp: 'Just now' }, ...prev]);
             refetchDebt();
-            refetchLTV();
+            refetchMusd();
           }, 3000);
         },
         onError: (err) => {
@@ -194,6 +305,29 @@ export default function Home() {
   const handleCreateStream = (e: React.FormEvent) => {
     e.preventDefault();
     if (!recipient || !streamDeposit || !duration || isWrongNetwork) return;
+    if (!isAddress(recipient)) {
+      setTxStatus('failed');
+      setStatusMessage('Invalid recipient EVM address format.');
+      return;
+    }
+    const depositNum = Number(streamDeposit);
+    if (isNaN(depositNum) || depositNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Deposit amount must be > 0.');
+      return;
+    }
+    const durationNum = Number(duration);
+    if (isNaN(durationNum) || durationNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Stream duration must be > 0 seconds.');
+      return;
+    }
+    const musdBalNum = musdBalance ? Number(formatEther(musdBalance as bigint)) : 0;
+    if (depositNum > musdBalNum) {
+      setTxStatus('failed');
+      setStatusMessage(`Insufficient MUSD balance for stream (${musdBalNum.toLocaleString()} available).`);
+      return;
+    }
     setTxStatus('wallet_confirm');
     setStatusMessage('Confirm stream creation in wallet...');
 
@@ -257,6 +391,18 @@ export default function Home() {
   const handleTopUpStream = (e: React.FormEvent) => {
     e.preventDefault();
     if (!topUpAmount || isWrongNetwork) return;
+    const amountNum = Number(topUpAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Top up amount must be > 0.');
+      return;
+    }
+    const musdBalNum = musdBalance ? Number(formatEther(musdBalance as bigint)) : 0;
+    if (amountNum > musdBalNum) {
+      setTxStatus('failed');
+      setStatusMessage(`Insufficient MUSD balance for top up (${musdBalNum.toLocaleString()} available).`);
+      return;
+    }
     setTxStatus('wallet_confirm');
     setStatusMessage('Confirm stream top-up in wallet...');
 
@@ -317,8 +463,152 @@ export default function Home() {
     );
   };
 
-  const ltvNumeric = currentLTV ? Number(currentLTV) / 100 : 0;
-  const ltvStatusColor = ltvNumeric > 55 ? 'text-[#C7473A]' : ltvNumeric > 45 ? 'text-[#B7791F]' : 'text-[#258454]';
+  // Withdraw Collateral Handler
+  const handleWithdrawCollateral = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!withdrawAmount || isWrongNetwork) return;
+    const amountNum = Number(withdrawAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Please enter a valid withdrawal amount > 0');
+      return;
+    }
+    if (amountNum > collateralEth) {
+      setTxStatus('failed');
+      setStatusMessage(`Withdrawal exceeds deposited collateral (${collateralEth.toFixed(4)} tBTC).`);
+      return;
+    }
+    if (amountNum > maxWithdrawableEth) {
+      setTxStatus('failed');
+      setStatusMessage(`Position would be undercollateralized. Max safe withdrawal is ${maxWithdrawableEth.toFixed(4)} tBTC.`);
+      return;
+    }
+    setTxStatus('wallet_confirm');
+    setStatusMessage('Confirm collateral withdrawal in wallet...');
+
+    writeVault(
+      {
+        address: CONTRACT_ADDRESSES.vault,
+        abi: VAULT_ABI,
+        functionName: 'withdrawCollateral',
+        args: [parseEther(withdrawAmount)],
+      },
+      {
+        onSuccess: (hash) => {
+          setTxStatus('pending');
+          setStatusMessage('Withdrawal transaction broadcasted to Mezo L2...');
+          setTimeout(() => {
+            setTxStatus('success');
+            setStatusMessage(`Successfully withdrawn ${withdrawAmount} tBTC`);
+            setTransactions(prev => [{ hash: hash.slice(0, 10) + '...', type: 'Withdraw tBTC', amount: `${withdrawAmount} tBTC`, status: 'success', timestamp: 'Just now' }, ...prev]);
+            refetchCollateral();
+            refetchTbtc();
+          }, 3000);
+        },
+        onError: (err) => {
+          setTxStatus('failed');
+          setStatusMessage(err.message || 'Withdrawal failed or position would be undercollateralized.');
+        }
+      }
+    );
+  };
+
+  // Yield Deposit Handler
+  const handleDepositYield = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!yieldDepositAmount || isWrongNetwork) return;
+    const amountNum = Number(yieldDepositAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Yield deposit amount must be > 0.');
+      return;
+    }
+    const musdBalNum = musdBalance ? Number(formatEther(musdBalance as bigint)) : 0;
+    if (amountNum > musdBalNum) {
+      setTxStatus('failed');
+      setStatusMessage(`Insufficient MUSD balance (${musdBalNum.toLocaleString()} available).`);
+      return;
+    }
+    setTxStatus('wallet_confirm');
+    setStatusMessage('Confirm yield deposit in wallet...');
+
+    writeGeneric(
+      {
+        address: CONTRACT_ADDRESSES.creditEngine,
+        abi: CREDIT_ENGINE_ABI,
+        functionName: 'depositYield',
+        args: [parseEther(yieldDepositAmount)],
+      },
+      {
+        onSuccess: (hash) => {
+          setTxStatus('pending');
+          setStatusMessage('Deposit yield broadcasted to Mezo L2...');
+          setTimeout(() => {
+            setTxStatus('success');
+            setStatusMessage(`Deposited ${yieldDepositAmount} MUSD into Credit Engine`);
+            setTransactions(prev => [{ hash: hash.slice(0, 10) + '...', type: 'Deposit Yield', amount: `${yieldDepositAmount} MUSD`, status: 'success', timestamp: 'Just now' }, ...prev]);
+            refetchYield();
+            refetchMusd();
+          }, 3000);
+        },
+        onError: (err) => {
+          setTxStatus('failed');
+          setStatusMessage(err.message || 'Deposit yield failed.');
+        }
+      }
+    );
+  };
+
+  // Amortize Debt Handler
+  const handleAmortizeDebt = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!amortizeAmount || !address || isWrongNetwork) return;
+    const amountNum = Number(amortizeAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Amortization amount must be > 0.');
+      return;
+    }
+    const yieldBalNum = yieldBalance ? Number(formatEther(yieldBalance as bigint)) : 0;
+    if (amountNum > yieldBalNum) {
+      setTxStatus('failed');
+      setStatusMessage(`Insufficient staking yield balance (${yieldBalNum.toLocaleString()} MUSD available).`);
+      return;
+    }
+    if (amountNum > debtEth) {
+      setTxStatus('failed');
+      setStatusMessage(`Amortization exceeds active debt (${debtEth.toLocaleString()} MUSD).`);
+      return;
+    }
+    setTxStatus('wallet_confirm');
+    setStatusMessage('Confirm debt amortization in wallet...');
+
+    writeGeneric(
+      {
+        address: CONTRACT_ADDRESSES.creditEngine,
+        abi: CREDIT_ENGINE_ABI,
+        functionName: 'amortizeDebt',
+        args: [address, parseEther(amortizeAmount)],
+      },
+      {
+        onSuccess: (hash) => {
+          setTxStatus('pending');
+          setStatusMessage('Amortization transaction broadcasted to Mezo L2...');
+          setTimeout(() => {
+            setTxStatus('success');
+            setStatusMessage(`Amortized ${amortizeAmount} MUSD of debt from yield`);
+            setTransactions(prev => [{ hash: hash.slice(0, 10) + '...', type: 'Amortize Debt', amount: `${amortizeAmount} MUSD`, status: 'success', timestamp: 'Just now' }, ...prev]);
+            refetchDebt();
+            refetchYield();
+          }, 3000);
+        },
+        onError: (err) => {
+          setTxStatus('failed');
+          setStatusMessage(err.message || 'Debt amortization failed.');
+        }
+      }
+    );
+  };
 
   return (
     <main className="min-h-screen bg-[#F6F4EF] text-[#171715] flex flex-col font-sans selection:bg-[#E66C35]/20 selection:text-[#E66C35]">
@@ -384,13 +674,23 @@ export default function Home() {
               <span className="text-xs font-mono font-medium text-[#171715]">
                 {address?.slice(0, 6)}...{address?.slice(-4)}
               </span>
-              <button onClick={() => disconnect()} className="text-xs text-[#C7473A] hover:opacity-80 font-semibold ml-2">
+              <button
+                onClick={() => {
+                  disconnect();
+                  setShowWalletModal(true);
+                }}
+                className="text-xs text-[#77756F] hover:text-[#171715] font-semibold ml-2 underline underline-offset-2"
+                title="Switch Account or Wallet"
+              >
+                Switch
+              </button>
+              <button onClick={() => disconnect()} className="text-xs text-[#C7473A] hover:opacity-80 font-semibold ml-1">
                 Disconnect
               </button>
             </div>
           ) : (
             <button
-              onClick={() => connect({ connector: connectors[0] })}
+              onClick={() => setShowWalletModal(true)}
               className="flex items-center space-x-2 bg-[#171715] hover:bg-[#E66C35] text-white font-semibold px-5 py-2.5 rounded-xl text-xs transition-all shadow-sm"
             >
               <Wallet className="w-4 h-4" />
@@ -410,11 +710,10 @@ export default function Home() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-5 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
-                  activeTab === tab
+                className={`px-5 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${activeTab === tab
                     ? 'bg-[#171715] text-white shadow-sm'
                     : 'bg-[#FBFAF7] text-[#77756F] hover:text-[#171715] border border-[#DEDBD3]'
-                }`}
+                  }`}
               >
                 {tab === 'overview' ? 'Overview' : tab === 'vault' ? 'Vault & Credit' : tab === 'payroll' ? 'Payroll Streamer' : 'Activity'}
               </button>
@@ -472,7 +771,7 @@ export default function Home() {
                   </div>
                   <div className="flex items-center space-x-2">
                     <span className="text-[#C59B27]">●</span>
-                    <span>Vault LTV: <strong className={ltvStatusColor}>{currentLTV ? `${ltvNumeric}%` : '0.0%'} (Max 60%)</strong></span>
+                    <span>Vault LTV: <strong className={ltvStatusColor}>{collateralValueUSD > 0 ? `${ltvNumeric.toFixed(1)}%` : '0.0%'} (Max 60%)</strong></span>
                   </div>
                 </div>
 
@@ -555,7 +854,7 @@ export default function Home() {
                     </div>
                     <div className="flex justify-between pb-3 border-b border-[#DEDBD3]">
                       <span className="text-[#77756F]">Current LTV Ratio:</span>
-                      <span className={`font-bold ${ltvStatusColor}`}>{currentLTV ? `${ltvNumeric}%` : '0.0%'}</span>
+                      <span className={`font-bold ${ltvStatusColor}`}>{collateralValueUSD > 0 ? `${ltvNumeric.toFixed(1)}%` : '0.0%'}</span>
                     </div>
                   </div>
                 </div>
@@ -594,7 +893,7 @@ export default function Home() {
                 </div>
                 <div className="flex justify-between text-[11px] font-mono text-[#77756F]">
                   <span>Start: Day 0</span>
-                  <span>Elapsed: { (animationPhase + 1) * 7 } Days</span>
+                  <span>Elapsed: {(animationPhase + 1) * 7} Days</span>
                   <span>Vesting: 30 Days</span>
                 </div>
               </div>
@@ -606,104 +905,287 @@ export default function Home() {
         {/* TAB 2: VAULT & CREDIT ENGINE */}
         {activeTab === 'vault' && (
           <div className="space-y-8 animate-fadeIn">
-            <div className="border-b border-[#DEDBD3] pb-4">
-              <h2 className="text-3xl font-serif-display font-bold text-[#171715]">MezoFlow Vault & Credit Engine</h2>
-              <p className="text-xs text-[#77756F] mt-1">Deposit tBTC collateral, mint MUSD stablecoins, and manage your LTV health ratio.</p>
+            <div className="border-b border-[#DEDBD3] pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-3xl font-serif-display font-bold text-[#171715]">MezoFlow Vault & Credit Engine</h2>
+                <p className="text-xs text-[#77756F] mt-1">Deposit tBTC collateral, mint MUSD stablecoins, and manage your LTV health ratio.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-xs font-mono">
+                <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
+                  <span className="text-[#77756F]">Wallet tBTC: </span>
+                  <strong className="text-[#171715]">{mounted && tbtcBalance ? Number(formatEther(tbtcBalance as bigint)).toFixed(4) : '0.0000'}</strong>
+                </div>
+                <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
+                  <span className="text-[#77756F]">Wallet MUSD: </span>
+                  <strong className="text-[#171715]">{mounted && musdBalance ? Number(formatEther(musdBalance as bigint)).toLocaleString() : '0'}</strong>
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Deposit Card */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl flex flex-col justify-between">
-                <div>
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715] mb-2 flex items-center space-x-2">
-                    <PlusCircle className="w-4 h-4 text-[#E66C35]" />
-                    <span>Deposit Collateral</span>
-                  </h3>
-                  <p className="text-xs text-[#77756F] mb-6 leading-relaxed">Deposit tBTC into the MezoFlow Vault contract.</p>
-                  <form onSubmit={handleDepositCollateral} className="space-y-4">
-                    <div>
-                      <label className="text-xs font-mono text-[#77756F] block mb-1">Amount (tBTC)</label>
-                      <input
-                        type="number"
-                        step="0.0001"
-                        value={collateralAmount}
-                        onChange={(e) => setCollateralAmount(e.target.value)}
-                        placeholder="0.0"
-                        className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
-                      />
-                    </div>
+            {/* Position Health Metrics Bar */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-5 rounded-2xl">
+                <p className="text-xs font-mono text-[#77756F]">Deposited Collateral</p>
+                <p className="text-xl font-bold font-mono text-[#171715] mt-1">{collateralEth.toFixed(4)} tBTC</p>
+                <p className="text-[11px] font-mono text-[#77756F] mt-0.5">${collateralValueUSD.toLocaleString()} USD</p>
+              </div>
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-5 rounded-2xl">
+                <p className="text-xs font-mono text-[#77756F]">Active MUSD Debt</p>
+                <p className="text-xl font-bold font-mono text-[#171715] mt-1">{debtEth.toLocaleString()} MUSD</p>
+                <p className={`text-[11px] font-mono mt-0.5 font-semibold ${ltvStatusColor}`}>LTV: {ltvNumeric.toFixed(1)}% / 60%</p>
+              </div>
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-5 rounded-2xl">
+                <p className="text-xs font-mono text-[#77756F]">Available to Borrow</p>
+                <p className="text-xl font-bold font-mono text-[#258454] mt-1">{availableBorrowUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                <p className="text-[11px] font-mono text-[#77756F] mt-0.5">Based on 60% Max LTV</p>
+              </div>
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-5 rounded-2xl">
+                <p className="text-xs font-mono text-[#77756F]">Max Safe Withdrawal</p>
+                <p className="text-xl font-bold font-mono text-[#B7791F] mt-1">{maxWithdrawableEth.toFixed(4)} tBTC</p>
+                <p className="text-[11px] font-mono text-[#77756F] mt-0.5">Retains debt solvency</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Card 1: Collateral Management */}
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl space-y-6">
+                <div className="flex items-center space-x-2 border-b border-[#DEDBD3] pb-3">
+                  <PlusCircle className="w-4 h-4 text-[#E66C35]" />
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Collateral Operations</h3>
+                </div>
+
+                {/* Deposit Collateral Form */}
+                <form onSubmit={handleDepositCollateral} className="space-y-3">
+                  <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
+                    <label>Deposit tBTC</label>
+                    <span>Balance: {mounted && tbtcBalance ? Number(formatEther(tbtcBalance as bigint)).toFixed(4) : '0'} tBTC</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={collateralAmount}
+                      onChange={(e) => setCollateralAmount(e.target.value)}
+                      placeholder="0.0 tBTC"
+                      className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
+                    />
+                    {tbtcBalance && (
+                      <button
+                        type="button"
+                        onClick={() => setCollateralAmount(formatEther(tbtcBalance as bigint))}
+                        className="absolute right-3 top-2.5 text-[11px] font-mono bg-[#DEDBD3]/40 px-2 py-1 rounded text-[#171715] hover:bg-[#DEDBD3]"
+                      >
+                        MAX
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => handleApprove('tbtc', 'vault', collateralAmount || '10')}
+                      disabled={genericPending || !isConnected}
+                      className="flex-1 bg-[#FBFAF7] border border-[#DEDBD3] hover:border-[#E66C35] text-[#171715] font-semibold py-2.5 rounded-xl text-xs transition-colors"
+                    >
+                      {genericPending ? 'Approving...' : '1. Approve tBTC'}
+                    </button>
                     <button
                       type="submit"
                       disabled={vaultPending || !isConnected}
-                      className="w-full bg-[#171715] hover:bg-[#E66C35] disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-xs transition-colors"
+                      className="flex-1 bg-[#171715] hover:bg-[#E66C35] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors"
                     >
-                      {vaultPending ? 'Processing...' : 'Deposit tBTC'}
+                      {vaultPending ? 'Depositing...' : '2. Deposit tBTC'}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Withdraw Collateral Form */}
+                <form onSubmit={handleWithdrawCollateral} className="space-y-3 pt-4 border-t border-[#DEDBD3]">
+                  <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
+                    <label>Withdraw tBTC</label>
+                    <span>Safe Max: {maxWithdrawableEth.toFixed(4)} tBTC</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      placeholder="0.0 tBTC"
+                      className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#B7791F]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setWithdrawAmount(maxWithdrawableEth.toFixed(4))}
+                      className="absolute right-3 top-2.5 text-[11px] font-mono bg-[#DEDBD3]/40 px-2 py-1 rounded text-[#171715] hover:bg-[#DEDBD3]"
+                    >
+                      SAFE MAX
+                    </button>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={vaultPending || !isConnected || maxWithdrawableEth <= 0}
+                    className="w-full bg-[#171715] hover:bg-[#B7791F] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors"
+                  >
+                    {vaultPending ? 'Withdrawing...' : 'Withdraw Collateral'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Card 2: Debt & Borrow Operations */}
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl space-y-6">
+                <div className="flex items-center space-x-2 border-b border-[#DEDBD3] pb-3">
+                  <DollarSign className="w-4 h-4 text-[#B7791F]" />
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Debt & Borrow Operations</h3>
+                </div>
+
+                {/* Borrow Form */}
+                <form onSubmit={handleBorrowMUSD} className="space-y-3">
+                  <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
+                    <label>Borrow MUSD (Mint)</label>
+                    <span>Available: {availableBorrowUSD.toLocaleString(undefined, { maximumFractionDigits: 0 })} MUSD</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="1"
+                      value={borrowAmount}
+                      onChange={(e) => setBorrowAmount(e.target.value)}
+                      placeholder="0.0 MUSD"
+                      className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#B7791F]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setBorrowAmount(Math.floor(availableBorrowUSD).toString())}
+                      className="absolute right-3 top-2.5 text-[11px] font-mono bg-[#DEDBD3]/40 px-2 py-1 rounded text-[#171715] hover:bg-[#DEDBD3]"
+                    >
+                      MAX
+                    </button>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={vaultPending || !isConnected || availableBorrowUSD <= 0}
+                    className="w-full bg-[#171715] hover:bg-[#B7791F] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors"
+                  >
+                    {vaultPending ? 'Minting...' : 'Borrow MUSD'}
+                  </button>
+                </form>
+
+                {/* Repay Form */}
+                <form onSubmit={handleRepayMUSD} className="space-y-3 pt-4 border-t border-[#DEDBD3]">
+                  <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
+                    <label>Repay MUSD</label>
+                    <span>Active Debt: {debtEth.toLocaleString()} MUSD</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="1"
+                      value={repayAmount}
+                      onChange={(e) => setRepayAmount(e.target.value)}
+                      placeholder="0.0 MUSD"
+                      className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#258454]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setRepayAmount(Math.min(debtEth, musdBalance ? Number(formatEther(musdBalance as bigint)) : 0).toString())}
+                      className="absolute right-3 top-2.5 text-[11px] font-mono bg-[#DEDBD3]/40 px-2 py-1 rounded text-[#171715] hover:bg-[#DEDBD3]"
+                    >
+                      MAX
+                    </button>
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => handleApprove('musd', 'vault', repayAmount || '10000')}
+                      disabled={genericPending || !isConnected}
+                      className="flex-1 bg-[#FBFAF7] border border-[#DEDBD3] hover:border-[#258454] text-[#171715] font-semibold py-2.5 rounded-xl text-xs transition-colors"
+                    >
+                      {genericPending ? 'Approving...' : '1. Approve MUSD'}
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={vaultPending || !isConnected || debtEth <= 0}
+                      className="flex-1 bg-[#171715] hover:bg-[#258454] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors"
+                    >
+                      {vaultPending ? 'Repaying...' : '2. Repay MUSD'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Card 3: Self-Repaying Credit Engine */}
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl lg:col-span-2 space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-[#DEDBD3] pb-3 gap-2">
+                  <div className="flex items-center space-x-2">
+                    <Zap className="w-4 h-4 text-[#E66C35]" />
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Self-Repaying Credit Engine</h3>
+                  </div>
+                  <div className="text-xs font-mono text-[#77756F]">
+                    Staking Yield Balance: <strong className="text-[#258454]">{mounted && yieldBalance ? Number(formatEther(yieldBalance as bigint)).toLocaleString() : '0'} MUSD</strong>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Deposit Yield */}
+                  <form onSubmit={handleDepositYield} className="space-y-3 bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
+                    <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
+                      <label className="font-bold text-[#171715]">Channel Yield into Engine</label>
+                      <span>MUSD: {mounted && musdBalance ? Number(formatEther(musdBalance as bigint)).toLocaleString() : '0'}</span>
+                    </div>
+                    <p className="text-[11px] text-[#77756F]">Deposit earned Mezo staking yield to fund automated debt amortization.</p>
+                    <input
+                      type="number"
+                      step="1"
+                      value={yieldDepositAmount}
+                      onChange={(e) => setYieldDepositAmount(e.target.value)}
+                      placeholder="Amount to deposit"
+                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2.5 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#E66C35]"
+                    />
+                    <div className="flex space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => handleApprove('musd', 'creditEngine', yieldDepositAmount || '5000')}
+                        disabled={genericPending || !isConnected}
+                        className="flex-1 bg-[#FBFAF7] border border-[#DEDBD3] hover:border-[#E66C35] text-[#171715] font-semibold py-2 rounded-lg text-xs transition-colors"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={genericPending || !isConnected}
+                        className="flex-1 bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2 rounded-lg text-xs transition-colors"
+                      >
+                        Deposit Yield
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Amortize Debt */}
+                  <form onSubmit={handleAmortizeDebt} className="space-y-3 bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
+                    <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
+                      <label className="font-bold text-[#171715]">Amortize Debt from Yield</label>
+                      <span>Active Debt: {debtEth.toLocaleString()} MUSD</span>
+                    </div>
+                    <p className="text-[11px] text-[#77756F]">Apply available yield balance directly to repay your vault loan without touching principal.</p>
+                    <input
+                      type="number"
+                      step="1"
+                      value={amortizeAmount}
+                      onChange={(e) => setAmortizeAmount(e.target.value)}
+                      placeholder="Amount to amortize"
+                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2.5 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#258454]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={genericPending || !isConnected || debtEth <= 0 || !yieldBalance}
+                      className="w-full bg-[#258454] hover:opacity-90 disabled:opacity-50 text-white font-semibold py-2 rounded-lg text-xs transition-colors"
+                    >
+                      Amortize Vault Debt
                     </button>
                   </form>
                 </div>
               </div>
 
-              {/* Borrow Card */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl flex flex-col justify-between">
-                <div>
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715] mb-2 flex items-center space-x-2">
-                    <DollarSign className="w-4 h-4 text-[#B7791F]" />
-                    <span>Borrow MUSD</span>
-                  </h3>
-                  <p className="text-xs text-[#77756F] mb-6 leading-relaxed">Mint MUSD stablecoins against tBTC (Max 60% LTV).</p>
-                  <form onSubmit={handleBorrowMUSD} className="space-y-4">
-                    <div>
-                      <label className="text-xs font-mono text-[#77756F] block mb-1">Amount (MUSD)</label>
-                      <input
-                        type="number"
-                        step="1"
-                        value={borrowAmount}
-                        onChange={(e) => setBorrowAmount(e.target.value)}
-                        placeholder="0.0"
-                        className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#B7791F]"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={vaultPending || !isConnected}
-                      className="w-full bg-[#171715] hover:bg-[#B7791F] disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-xs transition-colors"
-                    >
-                      {vaultPending ? 'Processing...' : 'Borrow MUSD'}
-                    </button>
-                  </form>
-                </div>
-              </div>
-
-              {/* Repay Card */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl flex flex-col justify-between">
-                <div>
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715] mb-2 flex items-center space-x-2">
-                    <ArrowUpRight className="w-4 h-4 text-[#258454]" />
-                    <span>Repay MUSD</span>
-                  </h3>
-                  <p className="text-xs text-[#77756F] mb-6 leading-relaxed">Repay borrowed MUSD to reduce debt and lower LTV ratio.</p>
-                  <form onSubmit={handleRepayMUSD} className="space-y-4">
-                    <div>
-                      <label className="text-xs font-mono text-[#77756F] block mb-1">Amount (MUSD)</label>
-                      <input
-                        type="number"
-                        step="1"
-                        value={repayAmount}
-                        onChange={(e) => setRepayAmount(e.target.value)}
-                        placeholder="0.0"
-                        className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#258454]"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={vaultPending || !isConnected}
-                      className="w-full bg-[#171715] hover:bg-[#258454] disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-xs transition-colors"
-                    >
-                      {vaultPending ? 'Processing...' : 'Repay MUSD'}
-                    </button>
-                  </form>
-                </div>
-              </div>
             </div>
           </div>
         )}
@@ -756,13 +1238,23 @@ export default function Home() {
                       className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
                     />
                   </div>
-                  <button
-                    type="submit"
-                    disabled={streamerPending || !isConnected}
-                    className="w-full bg-[#E66C35] hover:bg-[#171715] disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-xs transition-colors"
-                  >
-                    {streamerPending ? 'Processing...' : 'Create Stream'}
-                  </button>
+                  <div className="flex space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => handleApprove('musd', 'streamer', streamDeposit || '1000')}
+                      disabled={genericPending || !isConnected}
+                      className="flex-1 bg-[#FBFAF7] border border-[#DEDBD3] hover:border-[#E66C35] text-[#171715] font-semibold py-3 rounded-xl text-xs transition-colors"
+                    >
+                      {genericPending ? 'Approving...' : '1. Approve MUSD'}
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={streamerPending || !isConnected}
+                      className="flex-1 bg-[#E66C35] hover:bg-[#171715] disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-xs transition-colors"
+                    >
+                      {streamerPending ? 'Processing...' : '2. Create Stream'}
+                    </button>
+                  </div>
                 </form>
               </div>
 
@@ -791,7 +1283,7 @@ export default function Home() {
                         <div className="flex justify-between"><span className="text-[#77756F]">Employer:</span> <span className="text-[#171715]">{(streamData as any)[0]?.slice(0, 6)}...</span></div>
                         <div className="flex justify-between"><span className="text-[#77756F]">Recipient:</span> <span className="text-[#171715]">{(streamData as any)[1]?.slice(0, 6)}...</span></div>
                         <div className="flex justify-between"><span className="text-[#77756F]">Deposit:</span> <span className="font-bold text-[#171715]">{formatEther((streamData as any)[2] || BigInt(0))} MUSD</span></div>
-                        <div className="flex justify-between"><span className="text-[#77756F]">Withdrawn:</span> <span className="font-bold text-[#258454]">{formatEther((streamData as any)[3] || BigInt(0))} MUSD</span></div>
+                        <div className="flex justify-between"><span className="text-[#77756F]">Withdrawn:</span> <span className="font-bold text-[#258454]">{formatEther((streamData as any)[5] || BigInt(0))} MUSD</span></div>
                       </div>
                     )}
 
@@ -893,6 +1385,56 @@ export default function Home() {
       <footer className="border-t border-[#DEDBD3] bg-[#FBFAF7] px-8 py-6 mt-12 text-center text-xs font-mono text-[#77756F]">
         <p>BitStreamfi Protocol • Built on Mezo Network (Testnet Chain ID 31611) • Powered by Anatomy Design Principles</p>
       </footer>
+
+      {/* Connect & Switch Wallet Modal */}
+      {showWalletModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-[#FBFAF7] border border-[#DEDBD3] rounded-2xl max-w-sm w-full p-6 shadow-2xl relative">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-[#DEDBD3]">
+              <div className="flex items-center space-x-2">
+                <Wallet className="w-5 h-5 text-[#E66C35]" />
+                <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Select Wallet</h3>
+              </div>
+              <button
+                onClick={() => setShowWalletModal(false)}
+                className="text-[#77756F] hover:text-[#171715] font-bold text-sm px-1.5 py-0.5 rounded"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-[#77756F] mb-4">
+              Select a provider or switch accounts directly in your browser extension (MetaMask, Rabby, OKX, etc.).
+            </p>
+
+            <div className="space-y-2.5">
+              {connectors.map((connector) => (
+                <button
+                  key={connector.uid || connector.id}
+                  onClick={() => {
+                    disconnect();
+                    connect({ connector });
+                    setShowWalletModal(false);
+                  }}
+                  className="w-full flex items-center justify-between p-3.5 rounded-xl border border-[#DEDBD3] bg-[#F6F4EF] hover:bg-[#E66C35] hover:text-white hover:border-[#E66C35] transition-all text-xs font-semibold text-[#171715] group"
+                >
+                  <span className="flex items-center space-x-2">
+                    <span className="w-2 h-2 rounded-full bg-[#258454] group-hover:bg-white"></span>
+                    <span>{connector.name || 'Browser Wallet'}</span>
+                  </span>
+                  <span className="text-[10px] font-mono uppercase opacity-70 group-hover:opacity-100">Connect →</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-5 pt-3 border-t border-[#DEDBD3] text-center">
+              <p className="text-[11px] text-[#77756F] font-mono">
+                Tip: To switch to another account in the same wallet, switch accounts inside your extension and it will update immediately.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -4,7 +4,8 @@ pragma solidity ^0.8.20;
 interface IERC20 {
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
     function transfer(address recipient, uint256 amount) external returns (bool);
-    function balanceAccount(address account) external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
 }
 
 /**
@@ -86,9 +87,19 @@ contract MezoFlowVault {
 
     function repayMUSD(uint256 amount) external nonReentrant {
         require(amount > 0, "Amount must be > 0");
+        require(borrowedMUSD[msg.sender] >= amount, "Amount exceeds debt");
         borrowedMUSD[msg.sender] -= amount;
         bool success = IERC20(musdToken).transferFrom(msg.sender, address(this), amount);
         require(success, "TransferFrom failed");
         emit MUSARepaid(msg.sender, amount);
+    }
+
+    function repayMUSDFor(address user, uint256 amount) external nonReentrant {
+        require(amount > 0, "Amount must be > 0");
+        require(borrowedMUSD[user] >= amount, "Amount exceeds debt");
+        borrowedMUSD[user] -= amount;
+        bool success = IERC20(musdToken).transferFrom(msg.sender, address(this), amount);
+        require(success, "TransferFrom failed");
+        emit MUSARepaid(user, amount);
     }
 }
