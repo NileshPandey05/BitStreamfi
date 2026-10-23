@@ -25,11 +25,8 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'overview' | 'vault' | 'payroll' | 'activity'>('overview');
   const [animationPhase, setAnimationPhase] = useState(0);
 
-  // Transaction history log state
-  const [transactions, setTransactions] = useState<TransactionRecord[]>([
-    { hash: '0x3331...33e9', type: 'Deposit tBTC', amount: '0.5 tBTC', status: 'success', timestamp: '10 mins ago' },
-    { hash: '0x81fa...92a1', type: 'Borrow MUSD', amount: '15,000 MUSD', status: 'success', timestamp: '2 hours ago' },
-  ]);
+  // Transaction history log state (starts empty, populated by real user actions)
+  const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
 
   // UI feedback states
   const [txStatus, setTxStatus] = useState<'idle' | 'preparing' | 'wallet_confirm' | 'pending' | 'success' | 'failed'>('idle');
