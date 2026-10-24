@@ -57,6 +57,19 @@ contract MezoFlowVault {
         emit CollateralDeposited(msg.sender, amount);
     }
 
+    function depositNativeCollateral() external payable nonReentrant {
+        require(msg.value > 0, "Amount must be > 0");
+        collateralBalances[msg.sender] += msg.value;
+        emit CollateralDeposited(msg.sender, msg.value);
+    }
+
+    receive() external payable {
+        if (msg.value > 0) {
+            collateralBalances[msg.sender] += msg.value;
+            emit CollateralDeposited(msg.sender, msg.value);
+        }
+    }
+
     function withdrawCollateral(uint256 amount) external nonReentrant {
         require(amount > 0, "Amount must be > 0");
         require(collateralBalances[msg.sender] >= amount, "Insufficient collateral");
@@ -67,8 +80,13 @@ contract MezoFlowVault {
         require(borrowedMUSD[msg.sender] <= maxBorrow, "Position would be undercollateralized");
 
         collateralBalances[msg.sender] = remainingCollateral;
-        bool success = IERC20(tbtcToken).transfer(msg.sender, amount);
-        require(success, "Transfer failed");
+        if (address(this).balance >= amount) {
+            (bool success, ) = payable(msg.sender).call{value: amount}("");
+            require(success, "Native transfer failed");
+        } else {
+            bool success = IERC20(tbtcToken).transfer(msg.sender, amount);
+            require(success, "Transfer failed");
+        }
         emit CollateralWithdrawn(msg.sender, amount);
     }
 

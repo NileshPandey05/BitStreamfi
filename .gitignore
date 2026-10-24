@@ -1,27 +1,84 @@
-research_docs/
-akindo_*.png
-akindo_*.txt
+# ==============================================================================
+# BitStreamfi Root .gitignore
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Keys, Secrets, and Environment Variables
+# ------------------------------------------------------------------------------
+.env
+.env*
+*.env
+.private_key
+*.pem
+*.key
+*.secret
+secrets/
+
+# ------------------------------------------------------------------------------
+# 2. Images, Media, and Screenshots
+# ------------------------------------------------------------------------------
 *.png
 *.jpg
 *.jpeg
-*.txt
-*.py
-project_page.html
+*.gif
+*.webp
+*.bmp
+*.ico
+!frontend/app/favicon.ico
+*.svg
+!frontend/public/*.svg
+akindo_*.png
+Screenshot_*.png
+
+# ------------------------------------------------------------------------------
+# 3. Documentation, Specs, and Audit Reports (Keep only README.md files)
+# ------------------------------------------------------------------------------
+*.md
+!README.md
+frontend/*.md
+!frontend/README.md
+research_docs/
+research/
 project_details.txt
+project_page.html
 bitstreamfi-*.html
-.DS_Store
+*.txt
+
+# ------------------------------------------------------------------------------
+# 4. Local Test, Audit, and Automation Scripts
+# ------------------------------------------------------------------------------
+*_audit*.js
+test_*.js
+approve_mm.js
+check_metamask.js
+connect_and_test.js
+monitor.js
+open_metamask.js
+audit_results.json
+*.py
+!merkle_tree.py
+
+# ------------------------------------------------------------------------------
+# 5. Foundry & Solidity Artifacts
+# ------------------------------------------------------------------------------
 cache/
 out/
 lib/
 .gas-snapshot
 .sourcemaps
-.private_key
-research
-AGENT.md
+broadcast/*/31611/run-[0-9]*.json
+broadcast/DeployFull.s.sol/
+
+# ------------------------------------------------------------------------------
+# 6. Dependencies, Tooling & System
+# ------------------------------------------------------------------------------
+.DS_Store
 vault-build/
 node_modules/
 package.json
 package-lock.json
 .agents/
 skills-lock.json
-
+.merkle_cache/
+merkle
+!merkle_tree.py

@@ -1,11 +1,11 @@
 export const MEZO_TESTNET_CHAIN_ID = 31611;
 
 export const CONTRACT_ADDRESSES = {
-  vault: "0x34623FB11C65E2Cab4d252460AF1DC0F36ba9D20" as const,
-  streamer: "0x0486bbfC22AA66F61A9fa1c35e221DfB19de6d93" as const,
-  creditEngine: "0x625Cf421C9D7B58E747cf7D6301bdb3f235524f0" as const,
-  tbtc: "0x1234567890123456789012345678901234567890" as const,
-  musd: "0x0987654321098765432109876543210987654321" as const,
+  vault: "0x2e527FeD010D145052920f780726FB1F197674D4" as const,
+  streamer: "0xB04FCFE77f3c138a1B2de3e60f3B321FF358CaBf" as const,
+  creditEngine: "0xC47F09ab33dc434914D59Bd03d5fEBcb004865D4" as const,
+  tbtc: "0xc2a912D17e0DfAe27e17ef0cF3baF5beC659A6EA" as const, // Real/Original tBTC (0 balance)
+  musd: "0x7B7c000000000000000000000000000000000001" as const, // Official MEZO Testnet Token (User balance: ~200 MEZO)
 };
 
 export const ERC20_ABI = [
@@ -59,6 +59,13 @@ export const VAULT_ABI = [
     inputs: [{ name: "amount", type: "uint256" }],
     outputs: [],
     stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "depositNativeCollateral",
+    inputs: [],
+    outputs: [],
+    stateMutability: "payable",
   },
   {
     type: "function",
