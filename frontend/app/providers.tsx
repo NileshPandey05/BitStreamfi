@@ -10,7 +10,7 @@ import { injected } from 'wagmi/connectors';
 export const mezoTestnet = defineChain({
   id: 31611,
   name: 'Mezo Testnet',
-  nativeCurrency: { decimals: 18, name: 'Bitcoin', symbol: 'tBTC' },
+  nativeCurrency: { decimals: 18, name: 'Bitcoin', symbol: 'BTC' },
   rpcUrls: {
     default: { http: ['https://rpc.test.mezo.org'] },
   },
