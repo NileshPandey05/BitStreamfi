@@ -1,11 +1,11 @@
 export const MEZO_TESTNET_CHAIN_ID = 31611;
 
 export const CONTRACT_ADDRESSES = {
-  vault: "0x2e527FeD010D145052920f780726FB1F197674D4" as const,
-  streamer: "0xB04FCFE77f3c138a1B2de3e60f3B321FF358CaBf" as const,
-  creditEngine: "0xC47F09ab33dc434914D59Bd03d5fEBcb004865D4" as const,
-  tbtc: "0xc2a912D17e0DfAe27e17ef0cF3baF5beC659A6EA" as const, // Real/Original tBTC (0 balance)
-  musd: "0x7B7c000000000000000000000000000000000001" as const, // Official MEZO Testnet Token (User balance: ~200 MEZO)
+  vault: "0xA37a94cf5675fB41FB1911C57Be064B035630354" as const,
+  streamer: "0x286bEbCAEb98439eE30e919a078e271a3541C6B1" as const,
+  creditEngine: "0x932A00C55055E1b89D30a298891D6aB67b24911F" as const,
+  tbtc: "0xc2a912D17e0DfAe27e17ef0cF3baF5beC659A6EA" as const, // Real/Original tBTC
+  musd: "0x7B7c000000000000000000000000000000000001" as const, // Official MEZO Testnet Token (MUSD)
 };
 
 export const ERC20_ABI = [

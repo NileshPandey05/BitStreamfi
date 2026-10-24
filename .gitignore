@@ -25,6 +25,8 @@ secrets/
 *.bmp
 *.ico
 !frontend/app/favicon.ico
+!assets/hero-preview.png
+!frontend/public/hero-preview.png
 *.svg
 !frontend/public/*.svg
 akindo_*.png
@@ -67,6 +69,7 @@ lib/
 .gas-snapshot
 .sourcemaps
 broadcast/*/31611/run-[0-9]*.json
+broadcast/*/31611/dry-run/
 broadcast/DeployFull.s.sol/
 
 # ------------------------------------------------------------------------------
