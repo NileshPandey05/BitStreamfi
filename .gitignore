@@ -44,7 +44,12 @@ research/
 project_details.txt
 project_page.html
 bitstreamfi-*.html
+presentation.html
 *.txt
+*.pptx
+*.ppt
+.~lock.*#
+*.pdf
 
 # ------------------------------------------------------------------------------
 # 4. Local Test, Audit, and Automation Scripts
