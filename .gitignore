@@ -76,6 +76,7 @@ broadcast/DeployFull.s.sol/
 # 6. Dependencies, Tooling & System
 # ------------------------------------------------------------------------------
 .DS_Store
+.next/
 vault-build/
 node_modules/
 package.json

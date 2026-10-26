@@ -143,8 +143,15 @@ export default function Home() {
   const [showWalletModal, setShowWalletModal] = useState(false);
 
   const [mounted, setMounted] = useState(false);
+  const [currentTime, setCurrentTime] = useState<number | null>(null);
+
   useEffect(() => {
     setMounted(true);
+    setCurrentTime(Math.floor(Date.now() / 1000));
+    const timer = setInterval(() => {
+      setCurrentTime(Math.floor(Date.now() / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
   }, []);
 
   // Payroll form states
@@ -259,9 +266,9 @@ export default function Home() {
   const isCurrentUserRecipient = Boolean(address && streamRecipient && address.toLowerCase() === streamRecipient.toLowerCase());
 
   const streamDuration = streamStopTime > streamStartTime ? streamStopTime - streamStartTime : 1;
-  const streamNow = Math.floor(Date.now() / 1000);
+  const streamNow = currentTime ?? streamStartTime;
   const streamElapsed = Math.min(streamDuration, Math.max(0, streamNow - streamStartTime));
-  const streamProgressPercent = streamExists && streamDuration > 0 ? Math.min(100, Math.round((streamElapsed / streamDuration) * 100)) : 0;
+  const streamProgressPercent = streamExists && streamDuration > 0 && currentTime !== null ? Math.min(100, Math.round((streamElapsed / streamDuration) * 100)) : 0;
 
   const isWrongNetwork = mounted && isConnected && chainId !== MEZO_TESTNET_CHAIN_ID;
   const isReady = mounted && isConnected && !isWrongNetwork;
