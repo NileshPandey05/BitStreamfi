@@ -50,6 +50,13 @@ presentation.html
 *.ppt
 .~lock.*#
 *.pdf
+*.mp4
+*.mp3
+*.webm
+*.mov
+recordings/
+assets/recordings/
+record_*.js
 
 # ------------------------------------------------------------------------------
 # 4. Local Test, Audit, and Automation Scripts
