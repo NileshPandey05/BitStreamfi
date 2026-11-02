@@ -1040,42 +1040,30 @@ export default function Home() {
 
             {/* Wallet Connect & Account Management */}
             {mounted && isConnected ? (
-              <div className="flex items-center space-x-2">
-                {/* Active Wallet Badge / Manage Trigger */}
-                <button
-                  onClick={handleOpenManageWallet}
-                  className="flex items-center space-x-2.5 bg-[#F6F4EF] hover:bg-[#DEDBD3]/40 border border-[#DEDBD3] hover:border-[#171715]/40 px-3 py-1.5 rounded-xl transition-all shadow-xs group cursor-pointer"
-                  title="Manage wallet, view details, or switch wallet"
-                >
-                  <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                    {getWalletIcon(connector?.name || connector?.id, undefined, 'w-4 h-4')}
-                  </div>
-                  <div className="hidden sm:flex flex-col text-left font-mono text-xs">
-                    <span className="text-[#171715] font-bold group-hover:text-[#E66C35] transition-colors leading-tight">
+              <button
+                onClick={handleOpenManageWallet}
+                className="flex items-center space-x-2.5 bg-[#F6F4EF] hover:bg-[#EFECE6] border border-[#DEDBD3] hover:border-[#171715] px-3.5 py-2 rounded-xl transition-all shadow-xs group cursor-pointer"
+                title="Manage wallet, view account details, switch wallet, or disconnect"
+              >
+                <div className="w-5 h-5 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  {getWalletIcon(connector?.name || connector?.id, undefined, 'w-4 h-4')}
+                </div>
+                <div className="hidden sm:flex flex-col text-left font-mono text-xs">
+                  <div className="flex items-center space-x-1.5 leading-tight">
+                    <span className="text-[#171715] font-bold group-hover:text-[#E66C35] transition-colors">
                       {formatAddress(address)}
                     </span>
-                    <span className="text-[10px] text-[#258454] flex items-center space-x-1 leading-tight">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#258454] animate-pulse" />
-                      <span>{connector?.name || 'Mezo Testnet'}</span>
-                    </span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#258454] animate-pulse" />
                   </div>
-                  <span className="sm:hidden font-mono text-xs font-bold text-[#171715]">
-                    {formatAddress(address)}
+                  <span className="text-[10px] text-[#77756F] leading-tight">
+                    {connector?.name || 'Mezo Testnet'}
                   </span>
-                  <ChevronDown className="w-3.5 h-3.5 text-[#77756F] group-hover:text-[#171715] transition-colors" />
-                </button>
-
-                {/* Disconnect / Switch Button */}
-                <button
-                  onClick={handleOpenManageWallet}
-                  className="bg-[#171715] hover:bg-[#C7473A] text-white text-xs font-mono font-medium px-3.5 py-2 rounded-xl transition-colors flex items-center space-x-1.5 shadow-xs cursor-pointer"
-                  title="Disconnect or select what wallet to switch to"
-                >
-                  <LogOut className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden md:inline">Disconnect / Switch</span>
-                  <span className="md:hidden">Switch</span>
-                </button>
-              </div>
+                </div>
+                <span className="sm:hidden font-mono text-xs font-bold text-[#171715]">
+                  {formatAddress(address)}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-[#77756F] group-hover:text-[#171715] group-hover:translate-y-0.5 transition-all ml-0.5" />
+              </button>
             ) : (
               <button
                 onClick={handleOpenConnectWallet}
@@ -1295,7 +1283,7 @@ export default function Home() {
                   </div>
                   <div>
                     <h4 className="font-serif-display text-lg font-bold text-[#171715]">Connect Wallet to Transact</h4>
-                    <p className="text-xs text-[#77756F]">Select MetaMask, Coinbase Wallet, Rabby, or browser extension to manage vaults and troves.</p>
+                    <p className="text-xs text-[#77756F]">Select MetaMask, Phantom, or browser extension to manage vaults and troves.</p>
                   </div>
                 </div>
                 <button
