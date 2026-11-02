@@ -23,6 +23,7 @@ contract SelfRepayingCreditEngine {
     mapping(address => uint256) public stakingYieldBalances;
 
     event YieldDeposited(address indexed user, uint256 amount);
+    event YieldWithdrawn(address indexed user, uint256 amount);
     event DebtAmortized(address indexed user, uint256 amount);
 
     constructor(address _vault, address _musd) {
@@ -36,6 +37,15 @@ contract SelfRepayingCreditEngine {
         bool success = IERC20Engine(musdToken).transferFrom(msg.sender, address(this), amount);
         require(success, "TransferFrom failed");
         emit YieldDeposited(msg.sender, amount);
+    }
+
+    function withdrawYield(uint256 amount) external {
+        require(amount > 0, "Amount must be > 0");
+        require(stakingYieldBalances[msg.sender] >= amount, "Insufficient yield balance");
+        stakingYieldBalances[msg.sender] -= amount;
+        bool success = IERC20Engine(musdToken).transfer(msg.sender, amount);
+        require(success, "Transfer failed");
+        emit YieldWithdrawn(msg.sender, amount);
     }
 
     function amortizeDebt(address user, uint256 amount) external {
