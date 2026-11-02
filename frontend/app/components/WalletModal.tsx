@@ -47,6 +47,20 @@ export function MetaMaskIcon({ className = 'w-6 h-6' }: { className?: string }) 
   );
 }
 
+export function PhantomIcon({ className = 'w-6 h-6' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="128" height="128" rx="28" fill="#AB9FF2" />
+      <path
+        d="M104.5 66.5C104.5 44.1325 86.3675 26 64 26C41.6325 26 23.5 44.1325 23.5 66.5V84C23.5 89.5228 27.9772 94 33.5 94C36.2614 94 38.7614 92.8807 40.5607 91.0814L48 83.6421L55.4393 91.0814C57.2386 92.8807 59.7386 94 62.5 94C65.2614 94 67.7614 92.8807 69.5607 91.0814L77 83.6421L84.4393 91.0814C86.2386 92.8807 88.7386 94 91.5 94C97.0228 94 101.5 89.5228 101.5 84L104.5 66.5Z"
+        fill="white"
+      />
+      <circle cx="50" cy="60" r="7" fill="#534BB1" />
+      <circle cx="78" cy="60" r="7" fill="#534BB1" />
+    </svg>
+  );
+}
+
 export function CoinbaseIcon({ className = 'w-6 h-6' }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -106,6 +120,7 @@ export function getWalletIcon(nameOrId?: string, iconUrl?: string, className = '
   }
 
   const str = (nameOrId || '').toLowerCase();
+  if (str.includes('phantom')) return <PhantomIcon className={className} />;
   if (str.includes('metamask')) return <MetaMaskIcon className={className} />;
   if (str.includes('coinbase')) return <CoinbaseIcon className={className} />;
   if (str.includes('rabby')) return <RabbyIcon className={className} />;
@@ -187,6 +202,49 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Helper to detect if Phantom is installed in the browser
+  const isPhantomInstalled = () => {
+    if (typeof window === 'undefined') return false;
+    const win = window as unknown as {
+      phantom?: { ethereum?: unknown; solana?: unknown };
+      ethereum?: { isPhantom?: boolean; providers?: Array<{ isPhantom?: boolean }> };
+    };
+    return Boolean(
+      win.phantom?.ethereum ||
+      win.phantom?.solana ||
+      win.ethereum?.isPhantom ||
+      win.ethereum?.providers?.some((p) => p?.isPhantom)
+    );
+  };
+
+  // Helper to detect if MetaMask is installed in the browser
+  const isMetaMaskInstalled = () => {
+    if (typeof window === 'undefined') return false;
+    const win = window as unknown as {
+      ethereum?: { isMetaMask?: boolean; isPhantom?: boolean; providers?: Array<{ isMetaMask?: boolean }> };
+    };
+    return Boolean(
+      win.ethereum?.isMetaMask ||
+      win.ethereum?.providers?.some((p) => p?.isMetaMask) ||
+      (win.ethereum && !win.ethereum?.isPhantom)
+    );
+  };
+
+  // Format and sanitize Wagmi error messages
+  const formatErrorMessage = (message?: string) => {
+    if (!message) return 'Unable to connect to wallet. Please try again.';
+    if (message.includes('User rejected') || message.includes('denied')) {
+      return 'Connection rejected in your wallet. Please approve the prompt in your extension.';
+    }
+    if (message.includes('Provider not found') || message.includes('Connector not found')) {
+      return 'Wallet provider not found. Please ensure the extension is installed and active in your browser.';
+    }
+    if (message.includes('ChainNotConfigured') || message.includes('unsupported chain')) {
+      return 'Mezo Testnet is not configured in your wallet. BitStreamfi will request to add network 31611.';
+    }
+    return message.replace(/\.?\s*Version:\s*@wagmi\/[^\s]+/gi, '').trim();
+  };
+
   // Connect or switch to a connector
   const handleSelectConnector = async (connector: (typeof connectors)[0]) => {
     try {
@@ -194,30 +252,29 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
       setInstallPrompt(null);
       resetConnect();
 
-      // Check if wallet extension is missing for specific connectors
       const str = (connector.name || connector.id).toLowerCase();
-      if (typeof window !== 'undefined') {
-        const eth = (window as unknown as {
-          ethereum?: {
-            isMetaMask?: boolean;
-            isCoinbaseWallet?: boolean;
-            isRabby?: boolean;
-            providers?: Array<{ isMetaMask?: boolean; isCoinbaseWallet?: boolean; isRabby?: boolean }>;
-          };
-          rabby?: unknown;
-          coinbaseWalletExtension?: unknown;
-        });
 
-        const hasMM = Boolean(
-          eth?.ethereum?.isMetaMask ||
-          eth?.ethereum?.providers?.some((p) => p.isMetaMask)
-        );
+      // Pre-check for Phantom: if not installed, show install guide without triggering Wagmi error
+      if (str.includes('phantom')) {
+        if (!isPhantomInstalled()) {
+          setInstallPrompt({
+            name: 'Phantom',
+            url: 'https://phantom.app/download',
+          });
+          setSelectedConnectorId(null);
+          return;
+        }
+      }
 
-        if (str.includes('metamask') && !hasMM && !hasInjected) {
+      // Pre-check for MetaMask: if not installed, show install guide without triggering Wagmi error
+      if (str.includes('metamask')) {
+        if (!isMetaMaskInstalled() && !hasInjected) {
           setInstallPrompt({
             name: 'MetaMask',
             url: 'https://metamask.io/download/',
           });
+          setSelectedConnectorId(null);
+          return;
         }
       }
 
@@ -232,23 +289,27 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
         const eip6963MM = connectors.find((c) => c.id === 'io.metamask');
         const injectedMM = connectors.find((c) => c.id === 'metaMask');
         targetConnector = eip6963MM || injectedMM || connector;
-      } else if (str.includes('coinbase')) {
-        const eip6963CB = connectors.find((c) => c.id === 'com.coinbase.wallet');
-        const injectedCB = connectors.find((c) => c.id === 'coinbaseWallet');
-        targetConnector = eip6963CB || injectedCB || connector;
-      } else if (str.includes('rabby')) {
-        const eip6963Rabby = connectors.find((c) => c.id === 'io.rabby');
-        const injectedRabby = connectors.find((c) => c.id === 'rabby');
-        targetConnector = eip6963Rabby || injectedRabby || connector;
+      } else if (str.includes('phantom')) {
+        const eip6963Phantom = connectors.find((c) => c.id === 'app.phantom');
+        const injectedPhantom = connectors.find((c) => c.id === 'phantom');
+        targetConnector = eip6963Phantom || injectedPhantom || connector;
       }
 
       try {
         await connect({ connector: targetConnector });
       } catch (err: unknown) {
-        // Fallback: If target connector fails but generic injected exists, try that
-        const genericInjected = connectors.find((c) => c.id === 'injected');
-        if (genericInjected && genericInjected.id !== targetConnector.id) {
-          await connect({ connector: genericInjected });
+        const errMsg = (err as Error)?.message || '';
+        // If target connector fails because provider not found, fallback to generic injected
+        if (errMsg.includes('Provider not found') || errMsg.includes('Connector not found')) {
+          const genericInjected = connectors.find((c) => c.id === 'injected');
+          if (genericInjected && genericInjected.id !== targetConnector.id && hasInjected) {
+            await connect({ connector: genericInjected });
+          } else {
+            const walletName = str.includes('phantom') ? 'Phantom' : 'MetaMask';
+            const walletUrl = str.includes('phantom') ? 'https://phantom.app/download' : 'https://metamask.io/download/';
+            setInstallPrompt({ name: walletName, url: walletUrl });
+            return;
+          }
         } else {
           throw err;
         }
@@ -282,31 +343,13 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
         downloadUrl: 'https://metamask.io/download/',
       };
     }
-    if (nameLower.includes('coinbase')) {
+    if (nameLower.includes('phantom')) {
       return {
-        displayName: 'Coinbase Wallet',
-        badge: 'Smart Wallet',
-        badgeColor: 'bg-[#0052FF]/15 text-[#0052FF] border-[#0052FF]/30',
-        description: 'Connect with Coinbase extension, Smart Wallet, or mobile',
-        downloadUrl: 'https://www.coinbase.com/wallet/downloads',
-      };
-    }
-    if (nameLower.includes('rabby')) {
-      return {
-        displayName: 'Rabby Wallet',
-        badge: 'Web3 Native',
-        badgeColor: 'bg-[#8697FF]/15 text-[#4E61DB] border-[#8697FF]/30',
-        description: 'Multi-chain wallet built for DeFi & EVM power users',
-        downloadUrl: 'https://rabby.io/',
-      };
-    }
-    if (nameLower.includes('safe')) {
-      return {
-        displayName: 'Safe (Gnosis Safe)',
-        badge: 'Multisig',
-        badgeColor: 'bg-[#12FF80]/20 text-[#097339] border-[#12FF80]/40',
-        description: 'Connect a Mezo multi-signature contract account',
-        downloadUrl: 'https://app.safe.global/',
+        displayName: 'Phantom',
+        badge: 'Solana & EVM',
+        badgeColor: 'bg-[#AB9FF2]/20 text-[#534BB1] border-[#AB9FF2]/40',
+        description: 'Connect with Phantom extension (Multi-chain & EVM)',
+        downloadUrl: 'https://phantom.app/download',
       };
     }
     if (nameLower.includes('injected') || connector.type === 'injected') {
@@ -316,7 +359,7 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
         badgeColor: hasInjected
           ? 'bg-[#258454]/15 text-[#258454] border-[#258454]/30'
           : 'bg-[#77756F]/15 text-[#77756F] border-[#77756F]/30',
-        description: 'Brave, Phantom, OKX, or default browser wallet',
+        description: 'Brave, OKX, Rabby, or default browser wallet',
         downloadUrl: null,
       };
     }
@@ -330,21 +373,26 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
     };
   };
 
-  // Priority ordering for wallet list (MetaMask #1, Coinbase #2, Rabby #3, etc.)
+  // Priority ordering for wallet list (MetaMask #1, Phantom #2, Browser Extension #3)
   const getSortOrder = (name: string) => {
     const lower = name.toLowerCase();
     if (lower.includes('metamask')) return 1;
-    if (lower.includes('coinbase')) return 2;
-    if (lower.includes('rabby')) return 3;
-    if (lower.includes('browser') || lower.includes('injected')) return 4;
-    if (lower.includes('safe')) return 5;
-    return 6;
+    if (lower.includes('phantom')) return 2;
+    if (lower.includes('browser') || lower.includes('injected')) return 3;
+    return 4;
   };
 
-  // Deduplicate connectors by display name/ID and sort by popularity
+  // Deduplicate and filter to MetaMask, Phantom, and Browser Extension
   const displayedConnectors = connectors
     .filter((c, idx, arr) => {
       const meta = getConnectorMetadata(c);
+      const name = meta.displayName.toLowerCase();
+      const isAllowed =
+        name.includes('metamask') ||
+        name.includes('phantom') ||
+        name.includes('browser extension') ||
+        name.includes('injected');
+      if (!isAllowed) return false;
       return arr.findIndex((item) => getConnectorMetadata(item).displayName === meta.displayName) === idx;
     })
     .sort((a, b) => {
@@ -393,6 +441,44 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
 
         {/* MODAL BODY */}
         <div className="p-6 overflow-y-auto space-y-6">
+          {/* Status / Error Alert */}
+          {connectError && (
+            <div className="bg-[#C7473A]/10 border border-[#C7473A]/30 rounded-2xl p-4 flex items-start space-x-3 text-xs text-[#C7473A] font-mono">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="font-bold">Connection Request Failed</p>
+                <p className="mt-0.5 text-[11px] opacity-90 break-words">
+                  {formatErrorMessage(connectError.message)}
+                </p>
+              </div>
+              <button
+                onClick={() => resetConnect()}
+                className="text-[#C7473A] hover:underline font-bold text-[11px]"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {/* Install Prompt If Wallet Missing */}
+          {installPrompt && (
+            <div className="bg-[#B7791F]/10 border border-[#B7791F]/30 rounded-2xl p-4 flex items-center justify-between text-xs font-mono text-[#B7791F]">
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{installPrompt.name} extension not detected.</span>
+              </div>
+              <a
+                href={installPrompt.url}
+                target="_blank"
+                rel="noreferrer"
+                className="bg-[#B7791F] text-white px-3 py-1 rounded-lg font-bold hover:bg-[#B7791F]/90 transition-colors flex items-center space-x-1"
+              >
+                <span>Install</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
+
           {/* =========================================================================
               VIEW 1: CONNECT / SWITCH WALLET SELECTOR
              ========================================================================= */}
@@ -411,46 +497,6 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
                   >
                     View Account
                   </button>
-                </div>
-              )}
-
-              {/* Status / Error Alert */}
-              {connectError && (
-                <div className="bg-[#C7473A]/10 border border-[#C7473A]/30 rounded-2xl p-4 flex items-start space-x-3 text-xs text-[#C7473A] font-mono">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold">Connection Request Failed</p>
-                    <p className="mt-0.5 text-[11px] opacity-90 break-words">
-                      {connectError.message.includes('User rejected')
-                        ? 'Connection rejected in your wallet. Please approve the prompt.'
-                        : connectError.message}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => resetConnect()}
-                    className="text-[#C7473A] hover:underline font-bold text-[11px]"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              )}
-
-              {/* Install Prompt If Wallet Missing */}
-              {installPrompt && (
-                <div className="bg-[#B7791F]/10 border border-[#B7791F]/30 rounded-2xl p-4 flex items-center justify-between text-xs font-mono text-[#B7791F]">
-                  <div className="flex items-center space-x-2">
-                    <AlertTriangle className="w-4 h-4 shrink-0" />
-                    <span>{installPrompt.name} extension not detected.</span>
-                  </div>
-                  <a
-                    href={installPrompt.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="bg-[#B7791F] text-white px-3 py-1 rounded-lg font-bold hover:bg-[#B7791F]/90 transition-colors flex items-center space-x-1"
-                  >
-                    <span>Install</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
                 </div>
               )}
 
