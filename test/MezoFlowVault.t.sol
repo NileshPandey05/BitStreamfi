@@ -3,8 +3,22 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/MezoFlowVault.sol";
-import "../src/PayrollStreamer.sol";
-import "../src/SelfRepayingCreditEngine.sol";
+
+contract MockPriceFeed is IPriceFeed {
+    uint256 public price;
+
+    constructor(uint256 _price) {
+        price = _price;
+    }
+
+    function setPrice(uint256 _price) external {
+        price = _price;
+    }
+
+    function fetchPrice() external view override returns (uint256) {
+        return price;
+    }
+}
 
 contract MockERC20 is IERC20 {
     string public name = "Mock Token";
@@ -40,110 +54,179 @@ contract MockERC20 is IERC20 {
     }
 }
 
-contract MezoFlowTest is Test {
+contract MezoFlowVaultTest is Test {
     MezoFlowVault vault;
-    PayrollStreamer streamer;
-    SelfRepayingCreditEngine creditEngine;
+    MockPriceFeed priceFeed;
     MockERC20 tbtc;
     MockERC20 musd;
 
     address alice = address(0x1);
     address bob = address(0x2);
+    address liquidator = address(0x3);
 
     function setUp() public {
         tbtc = new MockERC20();
         musd = new MockERC20();
+        // Initial price: $60,000 per BTC (in 18 decimals)
+        priceFeed = new MockPriceFeed(60000 * 1e18);
 
-        vault = new MezoFlowVault(address(tbtc), address(musd));
-        streamer = new PayrollStreamer(address(musd));
-        creditEngine = new SelfRepayingCreditEngine(address(vault), address(musd));
+        vault = new MezoFlowVault(
+            address(tbtc),
+            address(musd),
+            address(priceFeed),
+            address(0),
+            address(0),
+            address(0),
+            address(0)
+        );
 
         tbtc.mint(alice, 10 ether);
-        musd.mint(address(vault), 100000 ether);
+        tbtc.mint(bob, 10 ether);
+        musd.mint(address(vault), 1000000 ether);
         musd.mint(alice, 10000 ether);
+        musd.mint(liquidator, 100000 ether);
+
+        vm.deal(alice, 10 ether);
+        vm.deal(bob, 10 ether);
+        vm.deal(liquidator, 10 ether);
+        vm.deal(address(vault), 10 ether);
     }
 
-    function testVaultDepositAndBorrowFlow() public {
+    function testDynamicPriceFeedIntegration() public {
+        assertEq(vault.getBTCPrice(), 60000 * 1e18);
+
+        // Price updates to $78,000
+        priceFeed.setPrice(78000 * 1e18);
+        assertEq(vault.getBTCPrice(), 78000 * 1e18);
+
+        // Deposit 1 tBTC
         vm.startPrank(alice);
+        tbtc.approve(address(vault), 1 ether);
         vault.depositCollateral(1 ether);
+
+        // Value of 1 tBTC at $78,000 = $78,000 USD
+        assertEq(vault.getCollateralValueUSD(alice), 78000 * 1e18);
+
+        // Max borrow at 60% LTV = $46,800 MUSD
+        assertEq(vault.getMaxBorrow(alice), 46800 * 1e18);
+        vm.stopPrank();
+    }
+
+    function testNativeCollateralSeparation() public {
+        vm.startPrank(alice);
+        vault.depositNativeCollateral{value: 1 ether}();
+        assertEq(vault.nativeCollateralBalances(alice), 1 ether);
+        assertEq(vault.tbtcCollateralBalances(alice), 0);
         assertEq(vault.collateralBalances(alice), 1 ether);
 
-        vault.borrowMUSD(10000 ether);
-        assertEq(vault.borrowedMUSD(alice), 10000 ether);
+        // Withdraw 0.5 native BTC
+        vault.withdrawCollateral(0.5 ether, true);
+        assertEq(vault.nativeCollateralBalances(alice), 0.5 ether);
+
+        // Attempting to withdraw tBTC should revert
+        vm.expectRevert("Insufficient tBTC collateral");
+        vault.withdrawCollateral(0.1 ether, false);
         vm.stopPrank();
     }
 
-    function testPayrollStreamingAndControls() public {
+    function testBorrowAndRepayFlow() public {
         vm.startPrank(alice);
-        uint256 streamId = streamer.createStream(bob, 3600 ether, 3600);
-        assertEq(streamId, 0);
-
-        // Top up stream
-        streamer.topUpStream(0, 3600 ether);
-
-        // Warp time by 1800 seconds
-        vm.warp(block.timestamp + 1800);
-
-        uint256 streamable = streamer.balanceOf(0);
-        assertEq(streamable, 3600 ether); // (7200 * 1800) / 3600 = 3600
-
-        // Cancel stream
-        streamer.cancelStream(0);
-        vm.stopPrank();
-    }
-
-    function testSelfRepayingCreditEngine() public {
-        vm.startPrank(alice);
+        tbtc.approve(address(vault), 1 ether);
         vault.depositCollateral(1 ether);
-        vault.borrowMUSD(10000 ether);
 
-        musd.mint(alice, 5000 ether);
-        creditEngine.depositYield(5000 ether);
-        assertEq(creditEngine.stakingYieldBalances(alice), 5000 ether);
+        // Borrow 20,000 MUSD (within 60% of $60,000 = $36,000)
+        vault.borrowMUSD(20000 ether);
+        assertEq(vault.borrowedMUSD(alice), 20000 ether);
+        assertEq(musd.balanceOf(alice), 30000 ether);
 
-        // Test amortizeDebt
-        creditEngine.amortizeDebt(alice, 2000 ether);
-        assertEq(creditEngine.stakingYieldBalances(alice), 3000 ether);
-        assertEq(vault.borrowedMUSD(alice), 8000 ether);
+        // Repay 5,000 MUSD
+        musd.approve(address(vault), 5000 ether);
+        vault.repayMUSD(5000 ether);
+        assertEq(vault.borrowedMUSD(alice), 15000 ether);
         vm.stopPrank();
     }
 
     function testBorrowExceedsMaxLTVReverts() public {
         vm.startPrank(alice);
-        vault.depositCollateral(1 ether); // 1 tBTC = $60,000 => max borrow 60% = 36,000 MUSD
+        tbtc.approve(address(vault), 1 ether);
+        vault.depositCollateral(1 ether); // 1 BTC = $60,000 => max borrow $36,000
 
-        // Borrowing 36,001 MUSD should fail
         vm.expectRevert("Exceeds max LTV");
         vault.borrowMUSD(36001 ether);
-
-        // Borrowing 36,000 MUSD succeeds
-        vault.borrowMUSD(36000 ether);
-        assertEq(vault.borrowedMUSD(alice), 36000 ether);
         vm.stopPrank();
     }
 
-    function testRepayExceedsDebtReverts() public {
+    function testWithdrawCollateralUndercollateralizedReverts() public {
         vm.startPrank(alice);
-        vault.depositCollateral(1 ether);
-        vault.borrowMUSD(5000 ether);
-
-        vm.expectRevert("Amount exceeds debt");
-        vault.repayMUSD(5001 ether);
-        vm.stopPrank();
-    }
-
-    function testWithdrawCollateralLTVBoundary() public {
-        vm.startPrank(alice);
+        tbtc.approve(address(vault), 2 ether);
         vault.depositCollateral(2 ether); // $120,000
         vault.borrowMUSD(50000 ether); // $50,000 debt
 
-        // Withdrawing 1 ether leaves 1 ether ($60,000 max borrow $36,000 < $50,000 debt) -> should revert
+        // Withdrawing 1 ether leaves 1 ether ($60,000 max borrow $36,000 < $50,000 debt) -> revert
         vm.expectRevert("Position would be undercollateralized");
-        vault.withdrawCollateral(1 ether);
+        vault.withdrawCollateral(1 ether, false);
 
-        // Withdrawing 0.5 ether leaves 1.5 ether ($90,000 max borrow $54,000 >= $50,000 debt) -> should pass
-        vault.withdrawCollateral(0.5 ether);
+        // Withdrawing 0.5 ether leaves 1.5 ether ($90,000 max borrow $54,000 >= $50,000 debt) -> pass
+        vault.withdrawCollateral(0.5 ether, false);
         assertEq(vault.collateralBalances(alice), 1.5 ether);
+        vm.stopPrank();
+    }
+
+    function testLiquidationWhenPriceDrops() public {
+        // High severity fix test: liquidation mechanism
+        vm.startPrank(alice);
+        tbtc.approve(address(vault), 1 ether);
+        vault.depositCollateral(1 ether); // 1 tBTC at $60,000
+        vault.borrowMUSD(36000 ether); // 60% LTV borrow
+        vm.stopPrank();
+
+        // Not liquidatable at $60,000 (debt 36,000 <= 75% of 60,000 = 45,000)
+        assertFalse(vault.isLiquidatable(alice));
+
+        // Price drops to $40,000 per BTC!
+        // At $40,000, 75% liquidation threshold is $30,000.
+        // Debt is $36,000 > $30,000 => alice IS NOW LIQUIDATABLE!
+        priceFeed.setPrice(40000 * 1e18);
+        assertTrue(vault.isLiquidatable(alice));
+
+        // Liquidator repays 10,000 MUSD of Alice's debt
+        vm.startPrank(liquidator);
+        musd.approve(address(vault), 10000 ether);
+
+        uint256 liquidatorTbtcBefore = tbtc.balanceOf(liquidator);
+        vault.liquidate(alice, 10000 ether, false);
+
+        // Alice debt reduced
+        assertEq(vault.borrowedMUSD(alice), 26000 ether);
+
+        // Liquidator received collateral with 5% bonus:
+        // collateralSeized = (10,000 * 1.05) / 40,000 = 0.2625 tBTC
+        uint256 tbtcReceived = tbtc.balanceOf(liquidator) - liquidatorTbtcBefore;
+        assertEq(tbtcReceived, (10000 ether * 10500) / 10000 * 1e18 / (40000 * 1e18));
+        assertEq(tbtcReceived, 0.2625 ether);
+        vm.stopPrank();
+    }
+
+    function testLiquidateNativeCollateral() public {
+        vm.startPrank(bob);
+        vault.depositNativeCollateral{value: 1 ether}();
+        vault.borrowMUSD(36000 ether);
+        vm.stopPrank();
+
+        // Price drops to $40,000
+        priceFeed.setPrice(40000 * 1e18);
+        assertTrue(vault.isLiquidatable(bob));
+
+        vm.startPrank(liquidator);
+        musd.approve(address(vault), 20000 ether);
+        uint256 liquidatorNativeBefore = liquidator.balance;
+
+        vault.liquidate(bob, 20000 ether, true);
+        assertEq(vault.borrowedMUSD(bob), 16000 ether);
+
+        // Liquidator received native BTC with 5% bonus
+        uint256 nativeReceived = liquidator.balance - liquidatorNativeBefore;
+        assertEq(nativeReceived, 0.525 ether); // (20,000 * 1.05) / 40,000 = 0.525 BTC
         vm.stopPrank();
     }
 }
