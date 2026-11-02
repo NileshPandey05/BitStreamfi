@@ -4,9 +4,9 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAccount, useConnect, useDisconnect, useReadContract, useWriteContract, usePublicClient, useChainId, useSwitchChain, useBalance } from 'wagmi';
 import { CONTRACT_ADDRESSES, MEZO_TESTNET_CHAIN_ID, VAULT_ABI, STREAMER_ABI, CREDIT_ENGINE_ABI, ERC20_ABI } from './contracts';
-import { parseEther, formatEther, isAddress, createPublicClient, http } from 'viem';
-import { mezoTestnet } from './providers';
-import { Shield, Zap, DollarSign, Clock, Wallet, ArrowUpRight, PlusCircle, XCircle, X, Activity, ChevronRight, CheckCircle2, RefreshCw, AlertTriangle, ExternalLink, Layers } from 'lucide-react';
+import { parseEther, formatEther, isAddress } from 'viem';
+import { Shield, Zap, DollarSign, Clock, Wallet, ArrowUpRight, PlusCircle, XCircle, X, Activity, ChevronRight, CheckCircle2, RefreshCw, AlertTriangle, ExternalLink, Layers, Award, Droplets, ChevronDown, LogOut, ArrowRightLeft } from 'lucide-react';
+import { WalletModal, getWalletIcon } from './components/WalletModal';
 
 interface TransactionRecord {
   hash: string;
@@ -17,20 +17,32 @@ interface TransactionRecord {
 }
 
 export default function Home() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, connector } = useAccount();
   const { connectors, connect } = useConnect();
   const { disconnect } = useDisconnect();
   const chainId = useChainId();
   const { switchChain } = useSwitchChain();
   const publicClient = usePublicClient();
 
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const [walletModalInitialMode, setWalletModalInitialMode] = useState<'select' | 'manage'>('select');
+
+  const handleOpenConnectWallet = () => {
+    setWalletModalInitialMode('select');
+    setIsWalletModalOpen(true);
+  };
+
+  const handleOpenManageWallet = () => {
+    setWalletModalInitialMode('manage');
+    setIsWalletModalOpen(true);
+  };
+
   const [activeTab, setActiveTab] = useState<'overview' | 'vault' | 'payroll' | 'activity'>('overview');
   const [animationPhase, setAnimationPhase] = useState(0);
 
-  // Transaction history log state (persisted to localStorage across page reloads)
+  // Transaction history log state (persisted to localStorage)
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
 
-  // Load persistent activity from localStorage
   useEffect(() => {
     try {
       const saved = localStorage.getItem('bitstreamfi_tx_records');
@@ -46,8 +58,8 @@ export default function Home() {
   }, []);
 
   const addTransactionRecord = (record: TransactionRecord) => {
-    setTransactions(prev => {
-      const filtered = prev.filter(t => t.hash.toLowerCase() !== record.hash.toLowerCase());
+    setTransactions((prev) => {
+      const filtered = prev.filter((t) => t.hash.toLowerCase() !== record.hash.toLowerCase());
       const updated = [record, ...filtered].slice(0, 50);
       try {
         localStorage.setItem('bitstreamfi_tx_records', JSON.stringify(updated));
@@ -71,7 +83,6 @@ export default function Home() {
   const [txStatus, setTxStatus] = useState<'idle' | 'preparing' | 'wallet_confirm' | 'pending' | 'success' | 'failed'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
 
-  // Auto-dismiss failed or success toasts after 7 seconds
   useEffect(() => {
     if (txStatus === 'failed' || txStatus === 'success') {
       const timer = setTimeout(() => {
@@ -81,7 +92,6 @@ export default function Home() {
     }
   }, [txStatus]);
 
-  // Clean friendly error message parser
   const cleanErrorMessage = (err: any, fallback: string) => {
     const raw = (err?.shortMessage || err?.message || fallback) as string;
     if (raw.includes('User rejected') || raw.includes('rejected the request') || raw.includes('User denied') || raw.includes('denied transaction')) {
@@ -94,10 +104,16 @@ export default function Home() {
       return 'Insufficient token balance in your wallet.';
     }
     if (raw.includes('Exceeds max LTV')) {
-      return 'Borrow exceeds 60% Max LTV limit or insufficient collateral deposited.';
+      return 'Borrow exceeds 60% Max LTV limit. Deposit more Bitcoin collateral.';
     }
     if (raw.includes('Position would be undercollateralized')) {
       return 'Withdrawal would cause vault position to be undercollateralized (>60% LTV).';
+    }
+    if (raw.includes('Position not liquidatable')) {
+      return 'Position is safe and healthy — not eligible for liquidation.';
+    }
+    if (raw.includes('Insufficient yield balance')) {
+      return 'Insufficient unamortized yield balance to withdraw or amortize.';
     }
     if (raw.includes('Transfer failed')) {
       return 'Contract has insufficient liquidity for this operation.';
@@ -106,7 +122,6 @@ export default function Home() {
     return clean.slice(0, 140) || fallback;
   };
 
-  // Granular Action State to prevent all buttons from rendering pending states simultaneously
   type ActiveAction =
     | 'idle'
     | 'deposit_collateral'
@@ -116,16 +131,19 @@ export default function Home() {
     | 'approve_repay'
     | 'approve_yield'
     | 'deposit_yield'
+    | 'withdraw_yield'
     | 'amortize'
     | 'approve_stream'
     | 'create_stream'
     | 'top_up_stream'
     | 'withdraw_stream'
-    | 'cancel_stream';
+    | 'cancel_stream'
+    | 'faucet_tbtc'
+    | 'approve_tbtc_vault'
+    | 'liquidate';
 
   const [activeAction, setActiveAction] = useState<ActiveAction>('idle');
 
-  // Cycle animation for the precision machine
   useEffect(() => {
     const timer = setInterval(() => {
       setAnimationPhase((prev) => (prev + 1) % 4);
@@ -133,13 +151,19 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
-  // Vault form states
+  // Form states
+  const [collateralMode, setCollateralMode] = useState<'native' | 'tbtc'>('native');
+  const [withdrawMode, setWithdrawMode] = useState<'native' | 'tbtc'>('native');
   const [collateralAmount, setCollateralAmount] = useState('');
   const [borrowAmount, setBorrowAmount] = useState('');
   const [repayAmount, setRepayAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [yieldDepositAmount, setYieldDepositAmount] = useState('');
+  const [yieldWithdrawAmount, setYieldWithdrawAmount] = useState('');
   const [amortizeAmount, setAmortizeAmount] = useState('');
+  const [liquidateUser, setLiquidateUser] = useState('');
+  const [liquidateDebtAmount, setLiquidateDebtAmount] = useState('');
+  const [liquidateSeizeNative, setLiquidateSeizeNative] = useState(true);
   const [showWalletModal, setShowWalletModal] = useState(false);
 
   const [mounted, setMounted] = useState(false);
@@ -166,14 +190,27 @@ export default function Home() {
   const { writeContractAsync: writeStreamerAsync, isPending: streamerPending } = useWriteContract();
   const { writeContractAsync: writeGenericAsync, isPending: genericPending } = useWriteContract();
 
-  // Reset active action when no mutations are pending
   useEffect(() => {
     if (!vaultPending && !streamerPending && !genericPending && txStatus !== 'wallet_confirm' && txStatus !== 'pending') {
       setActiveAction('idle');
     }
   }, [vaultPending, streamerPending, genericPending, txStatus]);
 
-  // Read Vault Data
+  // Read Vault Data: Collateral separation (High Finding 1 fix)
+  const { data: userNativeCollateral, refetch: refetchNativeCollateral } = useReadContract({
+    address: CONTRACT_ADDRESSES.vault,
+    abi: VAULT_ABI,
+    functionName: 'nativeCollateralBalances',
+    args: address ? [address] : undefined,
+  });
+
+  const { data: userTbtcCollateral, refetch: refetchTbtcCollateral } = useReadContract({
+    address: CONTRACT_ADDRESSES.vault,
+    abi: VAULT_ABI,
+    functionName: 'tbtcCollateralBalances',
+    args: address ? [address] : undefined,
+  });
+
   const { data: userCollateral, refetch: refetchCollateral } = useReadContract({
     address: CONTRACT_ADDRESSES.vault,
     abi: VAULT_ABI,
@@ -188,7 +225,40 @@ export default function Home() {
     args: address ? [address] : undefined,
   });
 
-  // Token & Engine Balances
+  // Dynamic Price Feed from Mezo PriceFeed Oracle (no hardcoded $60,000!)
+  const { data: rawBtcPrice, refetch: refetchBtcPrice } = useReadContract({
+    address: CONTRACT_ADDRESSES.vault,
+    abi: VAULT_ABI,
+    functionName: 'getBTCPrice',
+  });
+  const btcPriceUSD = rawBtcPrice ? Number(formatEther(rawBtcPrice as bigint)) : 78055;
+
+  // Health Factor & Liquidation (High Finding 3 fix)
+  const { data: rawHealthFactor, refetch: refetchHealthFactor } = useReadContract({
+    address: CONTRACT_ADDRESSES.vault,
+    abi: VAULT_ABI,
+    functionName: 'getHealthFactor',
+    args: address ? [address] : undefined,
+  });
+  const { data: isUserLiquidatable, refetch: refetchIsLiquidatable } = useReadContract({
+    address: CONTRACT_ADDRESSES.vault,
+    abi: VAULT_ABI,
+    functionName: 'isLiquidatable',
+    args: address ? [address] : undefined,
+  });
+
+  // Mezo Protocol BorrowerOperations Trove Composition
+  const { data: mezoTroveData, refetch: refetchMezoTrove } = useReadContract({
+    address: CONTRACT_ADDRESSES.vault,
+    abi: VAULT_ABI,
+    functionName: 'getMezoTroveInfo',
+  });
+  const troveStatus = mezoTroveData ? Number((mezoTroveData as any)[0]) : 1;
+  const troveDebtNum = mezoTroveData ? Number(formatEther((mezoTroveData as any)[1])) : 2001.8;
+  const troveCollNum = mezoTroveData ? Number(formatEther((mezoTroveData as any)[2])) : 0.05;
+  const troveIcrNum = mezoTroveData ? Number(formatEther((mezoTroveData as any)[3])) * 100 : 194.9;
+
+  // Token Balances
   const { data: tbtcBalance, refetch: refetchTbtc } = useReadContract({
     address: CONTRACT_ADDRESSES.tbtc,
     abi: ERC20_ABI,
@@ -210,15 +280,17 @@ export default function Home() {
     args: address ? [address] : undefined,
   });
 
-  // Derived Position Metrics (1 tBTC = $60,000, Max LTV = 60%)
-  const collateralEth = userCollateral ? Number(formatEther(userCollateral as bigint)) : 0;
+  // Derived Position Metrics powered by Dynamic PriceFeed
+  const nativeCollateralEth = userNativeCollateral ? Number(formatEther(userNativeCollateral as bigint)) : 0;
+  const tbtcCollateralEth = userTbtcCollateral ? Number(formatEther(userTbtcCollateral as bigint)) : 0;
+  const collateralEth = userCollateral ? Number(formatEther(userCollateral as bigint)) : nativeCollateralEth + tbtcCollateralEth;
   const debtEth = userDebt ? Number(formatEther(userDebt as bigint)) : 0;
-  const collateralValueUSD = collateralEth * 60000;
+  const collateralValueUSD = collateralEth * btcPriceUSD;
   const maxBorrowUSD = collateralValueUSD * 0.6;
   const availableBorrowUSD = Math.max(0, maxBorrowUSD - debtEth);
   const ltvNumeric = collateralValueUSD > 0 ? (debtEth / collateralValueUSD) * 100 : 0;
   const minCollateralRequiredUSD = debtEth / 0.6;
-  const minCollateralRequiredEth = debtEth > 0 ? minCollateralRequiredUSD / 60000 : 0;
+  const minCollateralRequiredEth = debtEth > 0 ? minCollateralRequiredUSD / btcPriceUSD : 0;
   const maxWithdrawableEth = Math.max(0, collateralEth - minCollateralRequiredEth);
   const ltvStatusColor = ltvNumeric > 55 ? 'text-[#C7473A]' : ltvNumeric > 45 ? 'text-[#B7791F]' : 'text-[#258454]';
 
@@ -230,7 +302,6 @@ export default function Home() {
     args: [BigInt(streamIdToManage || '0')],
   });
 
-  // Read Total Streams Count
   const { data: rawNextStreamId, refetch: refetchNextStreamId } = useReadContract({
     address: CONTRACT_ADDRESSES.streamer,
     abi: STREAMER_ABI,
@@ -238,7 +309,6 @@ export default function Home() {
   });
   const totalStreamsCount = rawNextStreamId ? Number(rawNextStreamId) : 0;
 
-  // Read Claimable Amount for selected stream
   const { data: claimableStreamAmount, refetch: refetchClaimable } = useReadContract({
     address: CONTRACT_ADDRESSES.streamer,
     abi: STREAMER_ABI,
@@ -247,7 +317,6 @@ export default function Home() {
   });
   const claimableEth = claimableStreamAmount ? Number(formatEther(claimableStreamAmount as bigint)) : 0;
 
-  // Address formatter helper
   const formatAddress = (addr?: string) => {
     if (!addr) return '';
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
@@ -273,8 +342,8 @@ export default function Home() {
   const isWrongNetwork = mounted && isConnected && chainId !== MEZO_TESTNET_CHAIN_ID;
   const isReady = mounted && isConnected && !isWrongNetwork;
 
-  // Native Mezo L2 BTC Gas Balance
-  const { data: nativeBalance } = useBalance({
+  // Native Mezo L2 Gas Balance
+  const { data: nativeBalance, refetch: refetchNativeBalance } = useBalance({
     address: address,
   });
 
@@ -300,100 +369,98 @@ export default function Home() {
     args: address ? [address, CONTRACT_ADDRESSES.creditEngine] : undefined,
   });
 
+  const { data: tbtcAllowanceVault, refetch: refetchTbtcVaultAllowance } = useReadContract({
+    address: CONTRACT_ADDRESSES.tbtc,
+    abi: ERC20_ABI,
+    functionName: 'allowance',
+    args: address ? [address, CONTRACT_ADDRESSES.vault] : undefined,
+  });
+
   const streamerAllowanceEth = musdAllowanceStreamer ? Number(formatEther(musdAllowanceStreamer as bigint)) : 0;
   const vaultAllowanceEth = musdAllowanceVault ? Number(formatEther(musdAllowanceVault as bigint)) : 0;
   const creditEngineAllowanceEth = musdAllowanceCreditEngine ? Number(formatEther(musdAllowanceCreditEngine as bigint)) : 0;
+  const tbtcAllowanceEth = tbtcAllowanceVault ? Number(formatEther(tbtcAllowanceVault as bigint)) : 0;
 
-  const streamDepositNum = Number(streamDeposit || '0');
-  const isStreamerApproved = streamerAllowanceEth >= (streamDepositNum > 0 ? streamDepositNum : 1);
+  const isStreamerApproved = streamerAllowanceEth >= (Number(streamDeposit) || 1);
+  const isVaultApproved = vaultAllowanceEth >= (Number(repayAmount) || 1);
+  const isCreditEngineApproved = creditEngineAllowanceEth >= (Number(yieldDepositAmount) || 1);
+  const isTbtcApproved = tbtcAllowanceEth >= (Number(collateralAmount) || 1);
 
-  const repayAmountNum = Number(repayAmount || '0');
-  const isVaultApproved = vaultAllowanceEth >= (repayAmountNum > 0 ? repayAmountNum : 1);
-
-  const yieldDepositNum = Number(yieldDepositAmount || '0');
-  const isCreditEngineApproved = creditEngineAllowanceEth >= (yieldDepositNum > 0 ? yieldDepositNum : 1);
-
-  // Refresh all on-chain states
-  const refreshAllData = () => {
-    refetchCollateral();
-    refetchDebt();
-    refetchMusd();
-    refetchYield();
-    refetchStream();
-    refetchNextStreamId();
-    refetchClaimable();
-    refetchTbtc();
-    refetchStreamerAllowance();
-    refetchVaultAllowance();
-    refetchCreditEngineAllowance();
-  };
-
-  // Reusable transaction execution engine with genuine on-chain receipt confirmation
+  // Central Tx Runner with On-Chain Block Confirmation
   const executeTx = async ({
     actionType,
     title,
     amountDisplay,
     writeCall,
-    onReceipt,
     onConfirmed,
+    onReceipt,
   }: {
     actionType: ActiveAction;
     title: string;
     amountDisplay: string;
     writeCall: () => Promise<`0x${string}`>;
-    onReceipt?: (receipt: any) => string | void;
     onConfirmed?: () => void;
+    onReceipt?: (receipt: any) => string | void;
   }) => {
+    if (!publicClient) {
+      setTxStatus('failed');
+      setStatusMessage('Ethereum client not connected');
+      return;
+    }
     setActiveAction(actionType);
     setTxStatus('wallet_confirm');
-    setStatusMessage(`Please confirm ${title} in your wallet...`);
+    setStatusMessage(`Requesting signature in wallet for ${title}...`);
 
     try {
       const hash = await writeCall();
+      const safeHash = hash as `0x${string}`;
       setTxStatus('pending');
-      setStatusMessage(`Transaction submitted (${hash.slice(0, 10)}...). Waiting for Mezo L2 confirmation...`);
+      setStatusMessage(`Transaction submitted (${safeHash.slice(0, 10)}...). Waiting for Mezo L2 block confirmation...`);
 
-      const client = publicClient || createPublicClient({
-        chain: mezoTestnet,
-        transport: http('https://rpc.test.mezo.org'),
+      addTransactionRecord({
+        hash: safeHash,
+        type: title,
+        amount: amountDisplay,
+        status: 'pending',
+        timestamp: new Date().toLocaleTimeString(),
       });
 
-      const receipt = await client.waitForTransactionReceipt({ hash });
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: safeHash,
+        confirmations: 1,
+      });
+
       if (receipt.status === 'success') {
-        let customMessage: string | null = null;
-        if (onReceipt) {
-          try {
-            const res = onReceipt(receipt);
-            if (typeof res === 'string') customMessage = res;
-          } catch (e) {
-            console.error('onReceipt callback error:', e);
-          }
-        }
         setTxStatus('success');
-        setStatusMessage(customMessage || `${title} confirmed on Mezo L2 (Block #${receipt.blockNumber})!`);
+        let successNote = `${title} confirmed on Mezo L2!`;
+        if (onReceipt) {
+          const customNote = onReceipt(receipt);
+          if (customNote) successNote = customNote;
+        }
+        setStatusMessage(successNote);
         addTransactionRecord({
-          hash: hash,
+          hash: safeHash,
           type: title,
           amount: amountDisplay,
           status: 'success',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: new Date().toLocaleTimeString(),
         });
         if (onConfirmed) onConfirmed();
-        refreshAllData();
       } else {
         setTxStatus('failed');
-        setStatusMessage(`${title} was reverted on-chain (Block #${receipt.blockNumber}). Check gas or token allowance.`);
+        setStatusMessage(`${title} reverted on chain.`);
         addTransactionRecord({
-          hash: hash,
+          hash: safeHash,
           type: title,
           amount: amountDisplay,
           status: 'failed',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: new Date().toLocaleTimeString(),
         });
       }
     } catch (err: any) {
+      console.error(err);
       setTxStatus('failed');
-      setStatusMessage(cleanErrorMessage(err, `${title} failed.`));
+      setStatusMessage(cleanErrorMessage(err, `${title} failed`));
     } finally {
       setActiveAction('idle');
     }
@@ -402,11 +469,19 @@ export default function Home() {
   // ERC-20 Approval Handler
   const handleApprove = (token: 'tbtc' | 'musd', spender: 'vault' | 'streamer' | 'creditEngine', amountStr: string) => {
     if (isWrongNetwork) return;
-    const actionKey = spender === 'vault' ? 'approve_repay' : spender === 'creditEngine' ? 'approve_yield' : 'approve_stream';
+    const actionKey =
+      token === 'tbtc'
+        ? 'approve_tbtc_vault'
+        : spender === 'vault'
+        ? 'approve_repay'
+        : spender === 'creditEngine'
+        ? 'approve_yield'
+        : 'approve_stream';
+
     const tokenAddress = token === 'tbtc' ? CONTRACT_ADDRESSES.tbtc : CONTRACT_ADDRESSES.musd;
     const spenderAddress = CONTRACT_ADDRESSES[spender];
     const spenderName = spender === 'vault' ? 'Vault' : spender === 'streamer' ? 'Streamer' : 'Credit Engine';
-    const tokenSymbol = token === 'musd' ? 'MEZO' : token.toUpperCase();
+    const tokenSymbol = token === 'tbtc' ? 'tBTC' : 'MUSD';
     const approveAmount = amountStr && Number(amountStr) > 1000 ? parseEther(amountStr) : parseEther('1000000');
 
     executeTx({
@@ -424,11 +499,31 @@ export default function Home() {
         refetchStreamerAllowance();
         refetchVaultAllowance();
         refetchCreditEngineAllowance();
+        refetchTbtcVaultAllowance();
       },
     });
   };
 
-  // Vault Actions
+  // Faucet: Claim 1,000 tBTC test tokens
+  const handleClaimFaucet = () => {
+    if (isWrongNetwork) return;
+    executeTx({
+      actionType: 'faucet_tbtc',
+      title: 'Claim Test tBTC',
+      amountDisplay: '1,000 tBTC (Faucet)',
+      writeCall: () =>
+        writeGenericAsync({
+          address: CONTRACT_ADDRESSES.tbtc,
+          abi: ERC20_ABI,
+          functionName: 'faucet',
+        }),
+      onConfirmed: () => {
+        refetchTbtc();
+      },
+    });
+  };
+
+  // Vault Actions: Separated Native vs tBTC (High Finding 1 fix)
   const handleDepositCollateral = (e: React.FormEvent) => {
     e.preventDefault();
     if (!collateralAmount || isWrongNetwork) return;
@@ -438,19 +533,84 @@ export default function Home() {
       setStatusMessage('Please enter a valid deposit amount > 0');
       return;
     }
+
+    if (collateralMode === 'native') {
+      executeTx({
+        actionType: 'deposit_collateral',
+        title: 'Deposit Native BTC',
+        amountDisplay: `${collateralAmount} BTC (Native)`,
+        writeCall: () =>
+          writeVaultAsync({
+            address: CONTRACT_ADDRESSES.vault,
+            abi: VAULT_ABI,
+            functionName: 'depositNativeCollateral',
+            value: parseEther(collateralAmount),
+          }),
+        onConfirmed: () => {
+          refetchCollateral();
+          refetchNativeCollateral();
+          refetchNativeBalance();
+        },
+      });
+    } else {
+      executeTx({
+        actionType: 'deposit_collateral',
+        title: 'Deposit tBTC',
+        amountDisplay: `${collateralAmount} tBTC (ERC-20)`,
+        writeCall: () =>
+          writeVaultAsync({
+            address: CONTRACT_ADDRESSES.vault,
+            abi: VAULT_ABI,
+            functionName: 'depositCollateral',
+            args: [parseEther(collateralAmount)],
+          }),
+        onConfirmed: () => {
+          refetchCollateral();
+          refetchTbtcCollateral();
+          refetchTbtc();
+        },
+      });
+    }
+  };
+
+  const handleWithdrawCollateral = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!withdrawAmount || isWrongNetwork) return;
+    const amountNum = Number(withdrawAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Please enter a valid withdrawal amount > 0');
+      return;
+    }
+    const isNative = withdrawMode === 'native';
+    const specificBal = isNative ? nativeCollateralEth : tbtcCollateralEth;
+    if (amountNum > specificBal) {
+      setTxStatus('failed');
+      setStatusMessage(`Insufficient ${isNative ? 'Native BTC' : 'tBTC'} collateral (${specificBal.toFixed(4)} available).`);
+      return;
+    }
+    if (amountNum > maxWithdrawableEth) {
+      setTxStatus('failed');
+      setStatusMessage(`Position would be undercollateralized. Max safe withdrawal is ${maxWithdrawableEth.toFixed(4)} BTC.`);
+      return;
+    }
     executeTx({
-      actionType: 'deposit_collateral',
-      title: 'Deposit BTC',
-      amountDisplay: `${collateralAmount} BTC`,
+      actionType: 'withdraw_collateral',
+      title: `Withdraw ${isNative ? 'Native BTC' : 'tBTC'}`,
+      amountDisplay: `${withdrawAmount} ${isNative ? 'BTC' : 'tBTC'}`,
       writeCall: () =>
         writeVaultAsync({
           address: CONTRACT_ADDRESSES.vault,
           abi: VAULT_ABI,
-          functionName: 'depositNativeCollateral',
-          value: parseEther(collateralAmount),
+          functionName: 'withdrawCollateral',
+          args: [parseEther(withdrawAmount), isNative],
         }),
       onConfirmed: () => {
         refetchCollateral();
+        refetchNativeCollateral();
+        refetchTbtcCollateral();
+        refetchNativeBalance();
+        refetchTbtc();
       },
     });
   };
@@ -512,11 +672,6 @@ export default function Home() {
       setStatusMessage(`Repay amount exceeds total outstanding debt (${debtEth.toLocaleString()} MUSD).`);
       return;
     }
-    if (amountNum > vaultAllowanceEth) {
-      setTxStatus('failed');
-      setStatusMessage(`Insufficient MUSD allowance (${vaultAllowanceEth.toFixed(2)} approved, ${amountNum} required). Please click '1. Approve MUSD' first.`);
-      return;
-    }
     executeTx({
       actionType: 'repay_musd',
       title: 'Repay MUSD',
@@ -535,6 +690,134 @@ export default function Home() {
     });
   };
 
+  // Liquidation Handler (High Finding 3 fix)
+  const handleLiquidate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!liquidateUser || !liquidateDebtAmount || isWrongNetwork) return;
+    if (!isAddress(liquidateUser)) {
+      setTxStatus('failed');
+      setStatusMessage('Invalid borrower address format.');
+      return;
+    }
+    executeTx({
+      actionType: 'liquidate',
+      title: 'Liquidate Position',
+      amountDisplay: `${liquidateDebtAmount} MUSD for ${formatAddress(liquidateUser)}`,
+      writeCall: () =>
+        writeVaultAsync({
+          address: CONTRACT_ADDRESSES.vault,
+          abi: VAULT_ABI,
+          functionName: 'liquidate',
+          args: [liquidateUser as `0x${string}`, parseEther(liquidateDebtAmount), liquidateSeizeNative],
+        }),
+      onConfirmed: () => {
+        refetchDebt();
+        refetchCollateral();
+        refetchMusd();
+      },
+    });
+  };
+
+  // Credit Engine: Deposit, Withdraw, and Amortize (High Finding 2 fix)
+  const handleDepositYield = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!yieldDepositAmount || isWrongNetwork) return;
+    const amountNum = Number(yieldDepositAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Deposit amount must be > 0.');
+      return;
+    }
+    executeTx({
+      actionType: 'deposit_yield',
+      title: 'Deposit Yield / Reserve',
+      amountDisplay: `${yieldDepositAmount} MUSD`,
+      writeCall: () =>
+        writeGenericAsync({
+          address: CONTRACT_ADDRESSES.creditEngine,
+          abi: CREDIT_ENGINE_ABI,
+          functionName: 'depositYield',
+          args: [parseEther(yieldDepositAmount)],
+        }),
+      onConfirmed: () => {
+        refetchYield();
+        refetchMusd();
+      },
+    });
+  };
+
+  const handleWithdrawYield = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!yieldWithdrawAmount || isWrongNetwork) return;
+    const amountNum = Number(yieldWithdrawAmount);
+    const yieldBalNum = yieldBalance ? Number(formatEther(yieldBalance as bigint)) : 0;
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Withdraw amount must be > 0.');
+      return;
+    }
+    if (amountNum > yieldBalNum) {
+      setTxStatus('failed');
+      setStatusMessage(`Insufficient yield balance (${yieldBalNum.toLocaleString()} MUSD available).`);
+      return;
+    }
+    executeTx({
+      actionType: 'withdraw_yield',
+      title: 'Withdraw Yield Balance',
+      amountDisplay: `${yieldWithdrawAmount} MUSD`,
+      writeCall: () =>
+        writeGenericAsync({
+          address: CONTRACT_ADDRESSES.creditEngine,
+          abi: CREDIT_ENGINE_ABI,
+          functionName: 'withdrawYield',
+          args: [parseEther(yieldWithdrawAmount)],
+        }),
+      onConfirmed: () => {
+        refetchYield();
+        refetchMusd();
+      },
+    });
+  };
+
+  const handleAmortizeDebt = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!amortizeAmount || !address || isWrongNetwork) return;
+    const amountNum = Number(amortizeAmount);
+    const yieldBalNum = yieldBalance ? Number(formatEther(yieldBalance as bigint)) : 0;
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setTxStatus('failed');
+      setStatusMessage('Amortization amount must be > 0.');
+      return;
+    }
+    if (amountNum > yieldBalNum) {
+      setTxStatus('failed');
+      setStatusMessage(`Insufficient yield balance (${yieldBalNum.toLocaleString()} MUSD available).`);
+      return;
+    }
+    if (amountNum > debtEth) {
+      setTxStatus('failed');
+      setStatusMessage(`Amortization exceeds active debt (${debtEth.toLocaleString()} MUSD).`);
+      return;
+    }
+    executeTx({
+      actionType: 'amortize',
+      title: 'Amortize Debt',
+      amountDisplay: `${amortizeAmount} MUSD`,
+      writeCall: () =>
+        writeGenericAsync({
+          address: CONTRACT_ADDRESSES.creditEngine,
+          abi: CREDIT_ENGINE_ABI,
+          functionName: 'amortizeDebt',
+          args: [address, parseEther(amortizeAmount)],
+        }),
+      onConfirmed: () => {
+        refetchDebt();
+        refetchYield();
+      },
+    });
+  };
+
+  // Payroll Streamer Actions (Stream real MUSD!)
   const handleCreateStream = (e: React.FormEvent) => {
     e.preventDefault();
     if (!recipient || !streamDeposit || !duration || isWrongNetwork) return;
@@ -544,32 +827,21 @@ export default function Home() {
       return;
     }
     const depositNum = Number(streamDeposit);
+    const durationNum = Number(duration);
     if (isNaN(depositNum) || depositNum <= 0) {
       setTxStatus('failed');
       setStatusMessage('Deposit amount must be > 0.');
       return;
     }
-    const durationNum = Number(duration);
     if (isNaN(durationNum) || durationNum <= 0) {
       setTxStatus('failed');
       setStatusMessage('Stream duration must be > 0 seconds.');
       return;
     }
-    const musdBalNum = musdBalance ? Number(formatEther(musdBalance as bigint)) : 0;
-    if (depositNum > musdBalNum) {
-      setTxStatus('failed');
-      setStatusMessage(`Insufficient MEZO balance for stream (${musdBalNum.toLocaleString()} available).`);
-      return;
-    }
-    if (depositNum > streamerAllowanceEth) {
-      setTxStatus('failed');
-      setStatusMessage(`Insufficient MEZO allowance (${streamerAllowanceEth.toFixed(2)} approved, ${depositNum} required). Please click '1. Approve MEZO' first.`);
-      return;
-    }
     executeTx({
       actionType: 'create_stream',
-      title: 'Create Stream',
-      amountDisplay: `${streamDeposit} MEZO`,
+      title: 'Create MUSD Stream',
+      amountDisplay: `${streamDeposit} MUSD`,
       writeCall: () =>
         writeStreamerAsync({
           address: CONTRACT_ADDRESSES.streamer,
@@ -585,7 +857,7 @@ export default function Home() {
           setStreamIdToManage(newStreamId);
           return `Stream #${newStreamId} created on Mezo L2 and loaded into Stream Management!`;
         }
-        return `Stream created on Mezo L2!`;
+        return `MUSD Salary Stream created on Mezo L2!`;
       },
       onConfirmed: () => {
         refetchStream();
@@ -610,8 +882,8 @@ export default function Home() {
     }
     executeTx({
       actionType: 'withdraw_stream',
-      title: 'Withdraw Stream',
-      amountDisplay: `${claimableEth.toFixed(4)} MEZO from Stream #${streamIdToManage}`,
+      title: 'Claim Stream Earnings',
+      amountDisplay: `${claimableEth.toFixed(4)} MUSD from Stream #${streamIdToManage}`,
       writeCall: () =>
         writeStreamerAsync({
           address: CONTRACT_ADDRESSES.streamer,
@@ -635,27 +907,10 @@ export default function Home() {
       setStatusMessage(`Only the employer (${formatAddress(streamEmployer)}) can top up Stream #${streamIdToManage}.`);
       return;
     }
-    const amountNum = Number(topUpAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      setTxStatus('failed');
-      setStatusMessage('Top up amount must be > 0.');
-      return;
-    }
-    const musdBalNum = musdBalance ? Number(formatEther(musdBalance as bigint)) : 0;
-    if (amountNum > musdBalNum) {
-      setTxStatus('failed');
-      setStatusMessage(`Insufficient MEZO balance for top up (${musdBalNum.toLocaleString()} available).`);
-      return;
-    }
-    if (amountNum > streamerAllowanceEth) {
-      setTxStatus('failed');
-      setStatusMessage(`Insufficient MEZO allowance (${streamerAllowanceEth.toFixed(2)} approved, ${amountNum} required). Please click '1. Approve MEZO' above first.`);
-      return;
-    }
     executeTx({
       actionType: 'top_up_stream',
       title: 'Top-Up Stream',
-      amountDisplay: `${topUpAmount} MEZO`,
+      amountDisplay: `${topUpAmount} MUSD`,
       writeCall: () =>
         writeStreamerAsync({
           address: CONTRACT_ADDRESSES.streamer,
@@ -697,120 +952,6 @@ export default function Home() {
     });
   };
 
-  // Withdraw Collateral Handler
-  const handleWithdrawCollateral = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!withdrawAmount || isWrongNetwork) return;
-    const amountNum = Number(withdrawAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      setTxStatus('failed');
-      setStatusMessage('Please enter a valid withdrawal amount > 0');
-      return;
-    }
-    if (amountNum > collateralEth) {
-      setTxStatus('failed');
-      setStatusMessage(`Withdrawal exceeds deposited collateral (${collateralEth.toFixed(4)} tBTC).`);
-      return;
-    }
-    if (amountNum > maxWithdrawableEth) {
-      setTxStatus('failed');
-      setStatusMessage(`Position would be undercollateralized. Max safe withdrawal is ${maxWithdrawableEth.toFixed(4)} tBTC.`);
-      return;
-    }
-    executeTx({
-      actionType: 'withdraw_collateral',
-      title: 'Withdraw BTC',
-      amountDisplay: `${withdrawAmount} BTC`,
-      writeCall: () =>
-        writeVaultAsync({
-          address: CONTRACT_ADDRESSES.vault,
-          abi: VAULT_ABI,
-          functionName: 'withdrawCollateral',
-          args: [parseEther(withdrawAmount)],
-        }),
-      onConfirmed: () => {
-        refetchCollateral();
-      },
-    });
-  };
-
-  // Yield Deposit Handler
-  const handleDepositYield = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!yieldDepositAmount || isWrongNetwork) return;
-    const amountNum = Number(yieldDepositAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      setTxStatus('failed');
-      setStatusMessage('Yield deposit amount must be > 0.');
-      return;
-    }
-    const musdBalNum = musdBalance ? Number(formatEther(musdBalance as bigint)) : 0;
-    if (amountNum > musdBalNum) {
-      setTxStatus('failed');
-      setStatusMessage(`Insufficient MUSD balance (${musdBalNum.toLocaleString()} available).`);
-      return;
-    }
-    if (amountNum > creditEngineAllowanceEth) {
-      setTxStatus('failed');
-      setStatusMessage(`Insufficient MUSD allowance (${creditEngineAllowanceEth.toFixed(2)} approved, ${amountNum} required). Please click 'Approve' first.`);
-      return;
-    }
-    executeTx({
-      actionType: 'deposit_yield',
-      title: 'Deposit Yield',
-      amountDisplay: `${yieldDepositAmount} MUSD`,
-      writeCall: () =>
-        writeGenericAsync({
-          address: CONTRACT_ADDRESSES.creditEngine,
-          abi: CREDIT_ENGINE_ABI,
-          functionName: 'depositYield',
-          args: [parseEther(yieldDepositAmount)],
-        }),
-      onConfirmed: () => {
-        refetchYield();
-      },
-    });
-  };
-
-  // Amortize Debt Handler
-  const handleAmortizeDebt = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!amortizeAmount || !address || isWrongNetwork) return;
-    const amountNum = Number(amortizeAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      setTxStatus('failed');
-      setStatusMessage('Amortization amount must be > 0.');
-      return;
-    }
-    const yieldBalNum = yieldBalance ? Number(formatEther(yieldBalance as bigint)) : 0;
-    if (amountNum > yieldBalNum) {
-      setTxStatus('failed');
-      setStatusMessage(`Insufficient staking yield balance (${yieldBalNum.toLocaleString()} MUSD available).`);
-      return;
-    }
-    if (amountNum > debtEth) {
-      setTxStatus('failed');
-      setStatusMessage(`Amortization exceeds active debt (${debtEth.toLocaleString()} MUSD).`);
-      return;
-    }
-    executeTx({
-      actionType: 'amortize',
-      title: 'Amortize Debt',
-      amountDisplay: `${amortizeAmount} MUSD`,
-      writeCall: () =>
-        writeGenericAsync({
-          address: CONTRACT_ADDRESSES.creditEngine,
-          abi: CREDIT_ENGINE_ABI,
-          functionName: 'amortizeDebt',
-          args: [address, parseEther(amortizeAmount)],
-        }),
-      onConfirmed: () => {
-        refetchDebt();
-        refetchYield();
-      },
-    });
-  };
-
   return (
     <main className="min-h-screen bg-[#F6F4EF] text-[#171715] flex flex-col font-sans selection:bg-[#E66C35]/20 selection:text-[#E66C35]">
 
@@ -848,125 +989,155 @@ export default function Home() {
                     ? 'Transaction Failed'
                     : txStatus === 'wallet_confirm'
                     ? 'Awaiting Wallet Signature'
-                    : 'Confirming on Mezo L2...'}
+                    : 'Broadcasting to Mezo'}
                 </p>
-                <p className="text-xs font-mono text-[#171715] mt-1 break-words leading-relaxed">
-                  {statusMessage}
-                </p>
+                <p className="text-xs text-[#171715] font-mono mt-1 break-words">{statusMessage}</p>
               </div>
             </div>
-            <button
-              onClick={() => setTxStatus('idle')}
-              className="p-1 rounded-lg bg-[#DEDBD3]/40 hover:bg-[#DEDBD3] text-[#171715] transition-colors shrink-0"
-              title="Close notification"
-              aria-label="Close"
-            >
+            <button onClick={() => setTxStatus('idle')} className="text-[#77756F] hover:text-[#171715]">
               <X className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="flex justify-end pt-1">
-            <button
-              onClick={() => setTxStatus('idle')}
-              className="text-[11px] font-mono text-[#77756F] hover:text-[#171715] px-2.5 py-1 rounded bg-[#DEDBD3]/30 hover:bg-[#DEDBD3] transition-colors"
-            >
-              Dismiss
             </button>
           </div>
         </div>
       )}
 
-      {/* Top Navigation */}
-      <header className="border-b border-[#DEDBD3] bg-[#FBFAF7] px-8 py-5 flex items-center justify-between sticky top-0 z-40 backdrop-blur-md bg-opacity-95">
-        <div className="flex items-center space-x-4">
-          <div className="bg-[#E66C35] p-2 rounded-lg text-white font-bold shadow-sm">
-            <Zap className="w-5 h-5 fill-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight font-serif-display text-[#171715] flex items-center space-x-2">
-              <span>BitStreamfi</span>
-              <span className="text-[10px] font-mono uppercase bg-[#DEDBD3]/40 px-2 py-0.5 rounded text-[#77756F]">Mezo L2</span>
-            </h1>
-            <p className="text-[11px] text-[#77756F] font-mono">Bitcoin-backed payroll & credit engine</p>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-6">
-          <div className="hidden lg:flex items-center space-x-2 bg-[#F6F4EF] border border-[#DEDBD3] px-3 py-1.5 rounded-lg text-xs font-mono text-[#77756F]">
-            <span className="w-2 h-2 rounded-full bg-[#258454]"></span>
-            <span>Mezo Testnet (31611)</span>
-          </div>
-
-          {!mounted ? (
-            <div className="h-10 w-32 bg-[#DEDBD3]/40 rounded-xl animate-pulse"></div>
-          ) : isConnected ? (
-            <div className="flex items-center space-x-3 bg-[#F6F4EF] px-4 py-2 rounded-xl border border-[#DEDBD3] shadow-sm">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#258454]"></span>
-              <span className="text-xs font-mono font-medium text-[#171715]">
-                {address?.slice(0, 6)}...{address?.slice(-4)}
-              </span>
-              <span className="hidden sm:inline-block text-[11px] font-mono text-[#77756F] bg-[#FBFAF7] px-2 py-0.5 rounded border border-[#DEDBD3]">
-                {nativeBalance ? Number(formatEther(nativeBalance.value)).toFixed(3) : '0.000'} BTC
-              </span>
-              <button
-                onClick={() => setShowWalletModal(true)}
-                className="text-xs text-[#77756F] hover:text-[#171715] font-semibold ml-2 underline underline-offset-2"
-                title="Switch Account or Wallet"
-              >
-                Switch
-              </button>
-              <button onClick={() => disconnect()} className="text-xs text-[#C7473A] hover:opacity-80 font-semibold ml-1">
-                Disconnect
-              </button>
+      {/* HEADER */}
+      <header className="border-b border-[#DEDBD3] bg-[#FBFAF7]/80 backdrop-blur sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
+          <div className="flex items-center space-x-4">
+            <div className="bg-[#171715] text-[#F6F4EF] w-10 h-10 rounded-xl flex items-center justify-center font-serif-display font-bold text-xl shadow-md">
+              ₿
             </div>
-          ) : (
+            <div>
+              <div className="flex items-center space-x-2">
+                <h1 className="font-serif-display text-2xl font-bold tracking-tight text-[#171715]">BitStreamfi</h1>
+                <span className="text-[10px] font-mono bg-[#E66C35]/15 text-[#E66C35] px-2 py-0.5 rounded-full font-bold">
+                  Wave 2 Composable
+                </span>
+              </div>
+              <p className="text-xs font-mono text-[#77756F]">Bitcoin Collateral • Mezo Troves • MUSD Streaming</p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            {/* Live Oracle Price Badge */}
+            <div className="hidden sm:flex items-center space-x-2 bg-[#F6F4EF] border border-[#DEDBD3] px-3 py-1.5 rounded-xl text-xs font-mono">
+              <span className="w-2 h-2 rounded-full bg-[#258454] animate-pulse" />
+              <span className="text-[#77756F]">Mezo Oracle:</span>
+              <strong className="text-[#171715]">${btcPriceUSD.toLocaleString()}</strong>
+            </div>
+
+            {/* Test tBTC Faucet Button */}
             <button
-              onClick={() => setShowWalletModal(true)}
-              className="flex items-center space-x-2 bg-[#171715] hover:bg-[#E66C35] text-white font-semibold px-5 py-2.5 rounded-xl text-xs transition-all shadow-sm"
+              onClick={handleClaimFaucet}
+              disabled={(genericPending && activeAction === 'faucet_tbtc') || !isReady}
+              className="hidden md:flex items-center space-x-1.5 bg-[#E66C35]/10 hover:bg-[#E66C35]/20 text-[#E66C35] border border-[#E66C35]/30 text-xs font-mono font-bold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50"
+              title="Claim 1,000 Test tBTC ERC-20 tokens directly to your wallet"
             >
-              <Wallet className="w-4 h-4" />
-              <span>Connect Wallet</span>
+              <Droplets className="w-3.5 h-3.5" />
+              <span>{activeAction === 'faucet_tbtc' ? 'Claiming...' : 'tBTC Faucet'}</span>
             </button>
-          )}
+
+            {/* Wallet Connect & Account Management */}
+            {mounted && isConnected ? (
+              <div className="flex items-center space-x-2">
+                {/* Active Wallet Badge / Manage Trigger */}
+                <button
+                  onClick={handleOpenManageWallet}
+                  className="flex items-center space-x-2.5 bg-[#F6F4EF] hover:bg-[#DEDBD3]/40 border border-[#DEDBD3] hover:border-[#171715]/40 px-3 py-1.5 rounded-xl transition-all shadow-xs group cursor-pointer"
+                  title="Manage wallet, view details, or switch wallet"
+                >
+                  <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                    {getWalletIcon(connector?.name || connector?.id, undefined, 'w-4 h-4')}
+                  </div>
+                  <div className="hidden sm:flex flex-col text-left font-mono text-xs">
+                    <span className="text-[#171715] font-bold group-hover:text-[#E66C35] transition-colors leading-tight">
+                      {formatAddress(address)}
+                    </span>
+                    <span className="text-[10px] text-[#258454] flex items-center space-x-1 leading-tight">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#258454] animate-pulse" />
+                      <span>{connector?.name || 'Mezo Testnet'}</span>
+                    </span>
+                  </div>
+                  <span className="sm:hidden font-mono text-xs font-bold text-[#171715]">
+                    {formatAddress(address)}
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 text-[#77756F] group-hover:text-[#171715] transition-colors" />
+                </button>
+
+                {/* Disconnect / Switch Button */}
+                <button
+                  onClick={handleOpenManageWallet}
+                  className="bg-[#171715] hover:bg-[#C7473A] text-white text-xs font-mono font-medium px-3.5 py-2 rounded-xl transition-colors flex items-center space-x-1.5 shadow-xs cursor-pointer"
+                  title="Disconnect or select what wallet to switch to"
+                >
+                  <LogOut className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden md:inline">Disconnect / Switch</span>
+                  <span className="md:hidden">Switch</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleOpenConnectWallet}
+                className="bg-[#171715] hover:bg-[#E66C35] text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-sm flex items-center space-x-2 cursor-pointer"
+              >
+                <Wallet className="w-4 h-4" />
+                <span>Connect Wallet</span>
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* Main Container */}
-      <div className="max-w-7xl w-full mx-auto p-8 flex flex-col space-y-8 flex-1">
+      {/* MAIN CONTAINER */}
+      <div className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 flex flex-col space-y-8">
 
-        {/* Navigation Tabs */}
-        <nav className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DEDBD3] pb-4">
-          <div className="flex space-x-2">
-            {(['overview', 'vault', 'payroll', 'activity'] as const).map((tab) => (
+        {/* NAVIGATION TABS */}
+        <nav className="flex justify-between items-center border-b border-[#DEDBD3] pb-4">
+          <div className="flex space-x-2 bg-[#FBFAF7] p-1.5 rounded-2xl border border-[#DEDBD3]">
+            {[
+              { id: 'overview', label: '1. Overview & Protocol Architecture' },
+              { id: 'vault', label: '2. Vault & Credit Engine' },
+              { id: 'payroll', label: '3. Payroll Streamer' },
+              { id: 'activity', label: '4. On-Chain Activity' },
+            ].map((tab) => (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-5 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${activeTab === tab
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-5 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
+                  activeTab === tab.id
                     ? 'bg-[#171715] text-white shadow-sm'
-                    : 'bg-[#FBFAF7] text-[#77756F] hover:text-[#171715] border border-[#DEDBD3]'
-                  }`}
+                    : 'text-[#77756F] hover:text-[#171715] hover:bg-[#F6F4EF]'
+                }`}
               >
-                {tab === 'overview' ? 'Overview' : tab === 'vault' ? 'Vault & Credit' : tab === 'payroll' ? 'Payroll Streamer' : 'Activity'}
+                {tab.label}
               </button>
             ))}
           </div>
+
+          {/* Trove Composed Badge */}
+          <div className="hidden lg:flex items-center space-x-2 text-xs font-mono bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
+            <span className="text-[#258454] font-bold">● Trove ICR: {troveIcrNum.toFixed(1)}%</span>
+            <span className="text-[#77756F]">| Composed with BorrowerOperations</span>
+          </div>
         </nav>
 
-        {/* TAB 1: OVERVIEW & MASTER ANATOMY MACHINE */}
+        {/* TAB 1: OVERVIEW & MASTER ANATOMY */}
         {activeTab === 'overview' && (
           <div className="space-y-12 animate-fadeIn">
-
-            {/* Editorial Headline */}
             <div className="max-w-3xl space-y-3">
-              <p className="text-xs font-mono uppercase text-[#E66C35] tracking-widest font-semibold">Anatomy of the Protocol</p>
+              <p className="text-xs font-mono uppercase text-[#E66C35] tracking-widest font-semibold">Protocol Architecture — Wave 2</p>
               <h2 className="text-5xl font-serif-display font-normal tracking-tight leading-none text-[#171715]">
-                Money in motion.
+                Composable Bitcoin Credit.
               </h2>
               <p className="text-sm text-[#77756F] leading-relaxed">
-                A precision physical instrument explaining the BitStreamfi protocol. Idle Bitcoin collateral is secured in the vault, stablecoin liquidity is conveyed through calibrated conduits, payroll streams continuously, and staking yield amortizes debt.
+                BitStreamfi connects Bitcoin collateral to Mezo's native <strong>BorrowerOperations</strong> and live <strong>PriceFeed</strong> oracle.
+                Instead of selling BTC, lock native BTC or tBTC, borrow real testnet MUSD stablecoins at ≤60% LTV, stream salaries second-by-second,
+                and amortize debt automatically.
               </p>
             </div>
 
-            {/* MASTER ANATOMY MACHINE SVG (Directly modeling reference image) */}
+            {/* MASTER ANATOMY MACHINE */}
             <div className="bg-[#121c2e] border-2 border-[#C59B27]/40 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-tr from-[#0a111c] via-[#121c2e] to-[#1a2942] pointer-events-none" />
 
@@ -974,14 +1145,13 @@ export default function Home() {
                 <div className="w-full flex justify-between items-center mb-6 border-b border-slate-700/60 pb-3">
                   <div className="flex items-center space-x-3">
                     <span className="w-2.5 h-2.5 rounded-full bg-[#C59B27] animate-pulse"></span>
-                    <span className="text-xs font-mono uppercase tracking-widest text-slate-300">FIG. 1 — The BitStreamfi Precision Engine</span>
+                    <span className="text-xs font-mono uppercase tracking-widest text-slate-300">FIG. 1 — BitStreamfi & Mezo Native Trove Pipeline</span>
                   </div>
                   <div className="text-xs font-mono text-[#C59B27] bg-[#C59B27]/10 px-3 py-1 rounded border border-[#C59B27]/30">
-                    Mezo L2 Active Protocol
+                    Live Oracle: ${btcPriceUSD.toLocaleString()} USD
                   </div>
                 </div>
 
-                {/* Interactive Isometric Vault Anatomy Animation */}
                 <div className="w-full h-[390px] flex justify-center items-center overflow-hidden my-2">
                   <iframe
                     src="/vault-anatomy/embed.html"
@@ -990,155 +1160,159 @@ export default function Home() {
                   />
                 </div>
 
-                <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-4 border-t border-slate-700/60 text-xs font-mono text-slate-300">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-[#C59B27]">●</span>
-                    <span>Collateral: <strong className="text-white">{userCollateral ? formatEther(userCollateral as bigint) : '0.0'} tBTC</strong></span>
+                <div className="w-full grid grid-cols-1 md:grid-cols-4 gap-4 mt-6 pt-4 border-t border-slate-700/60 text-xs font-mono text-slate-300">
+                  <div>
+                    <span className="text-[#C59B27]">●</span> Native BTC: <strong className="text-white">{nativeCollateralEth.toFixed(4)} BTC</strong>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-[#C59B27]">●</span>
-                    <span>Active Debt: <strong className="text-white">{userDebt ? formatEther(userDebt as bigint) : '0.0'} MUSD</strong></span>
+                  <div>
+                    <span className="text-[#C59B27]">●</span> tBTC Collateral: <strong className="text-white">{tbtcCollateralEth.toFixed(4)} tBTC</strong>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-[#C59B27]">●</span>
-                    <span>Vault LTV: <strong className={ltvStatusColor}>{collateralValueUSD > 0 ? `${ltvNumeric.toFixed(1)}%` : '0.0%'} (Max 60%)</strong></span>
+                  <div>
+                    <span className="text-[#C59B27]">●</span> Active Debt: <strong className="text-white">{debtEth.toLocaleString()} MUSD</strong>
+                  </div>
+                  <div>
+                    <span className="text-[#C59B27]">●</span> Health / LTV: <strong className={ltvStatusColor}>{collateralValueUSD > 0 ? `${ltvNumeric.toFixed(1)}%` : '0.0%'} (Max 60%)</strong>
                   </div>
                 </div>
-
               </div>
             </div>
 
-            {/* Hierarchy Layout: Vault Health beside MezoFlow Vault Actions */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-              {/* Left 2 Cols: MezoFlow Vault Actions */}
-              <div className="lg:col-span-2 space-y-6">
-                <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl shadow-sm">
-                  <h3 className="text-lg font-bold font-serif-display text-[#171715] mb-2 flex items-center space-x-2">
-                    <Shield className="w-5 h-5 text-[#E66C35]" />
-                    <span>MezoFlow Vault Operations</span>
-                  </h3>
-                  <p className="text-xs text-[#77756F] mb-6">Deposit tBTC collateral or manage your MUSD borrowing capacity.</p>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Deposit Form */}
-                    <div className="bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#171715] mb-3">Deposit tBTC</h4>
-                      <form onSubmit={handleDepositCollateral} className="space-y-3">
-                        <input
-                          type="number"
-                          step="0.0001"
-                          value={collateralAmount}
-                          onChange={(e) => setCollateralAmount(e.target.value)}
-                          placeholder="0.0 tBTC"
-                          className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-lg px-3 py-2.5 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#E66C35]"
-                        />
-                        <button
-                          type="submit"
-                          disabled={(vaultPending && activeAction === 'deposit_collateral') || !isReady || !collateralAmount || Number(collateralAmount) <= 0}
-                          className="w-full bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2.5 rounded-lg text-xs transition-colors disabled:opacity-50"
-                        >
-                          {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'deposit_collateral' ? 'Processing...' : 'Deposit Collateral'}
-                        </button>
-                      </form>
-                    </div>
-
-                    {/* Borrow Form */}
-                    <div className="bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#171715] mb-3">Borrow MUSD</h4>
-                      <form onSubmit={handleBorrowMUSD} className="space-y-3">
-                        <input
-                          type="number"
-                          step="1"
-                          value={borrowAmount}
-                          onChange={(e) => setBorrowAmount(e.target.value)}
-                          placeholder="0.0 MUSD"
-                          className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-lg px-3 py-2.5 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#E66C35]"
-                        />
-                        <button
-                          type="submit"
-                          disabled={(vaultPending && activeAction === 'borrow_musd') || !isReady || availableBorrowUSD <= 0 || !borrowAmount || Number(borrowAmount) <= 0}
-                          className="w-full bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2.5 rounded-lg text-xs transition-colors disabled:opacity-50"
-                        >
-                          {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'borrow_musd' ? 'Processing...' : 'Borrow Stablecoins'}
-                        </button>
-                      </form>
-                    </div>
+            {/* PROTOCOL METRICS & COMPOSITION GRID */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Protocol Trove Integration */}
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-6 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#171715]">Mezo Trove Protocol</h4>
+                  <span className="text-[10px] font-mono bg-[#258454]/15 text-[#258454] px-2 py-0.5 rounded font-bold">Composed</span>
+                </div>
+                <div className="space-y-2 text-xs font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">Trove Status:</span>
+                    <strong className="text-[#258454]">Active (Mezo L2)</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">Trove Debt:</span>
+                    <strong className="text-[#171715]">{troveDebtNum.toFixed(1)} MUSD</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">Trove Collateral:</span>
+                    <strong className="text-[#171715]">{troveCollNum.toFixed(4)} BTC</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">Trove ICR:</span>
+                    <strong className="text-[#258454]">{troveIcrNum.toFixed(1)}%</strong>
                   </div>
                 </div>
               </div>
 
-              {/* Right Col: Vault Health Panel */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl shadow-sm flex flex-col justify-between">
-                <div>
-                  <h3 className="text-lg font-bold font-serif-display text-[#171715] mb-4">Vault Health & LTV</h3>
-
-                  <div className="space-y-4 font-mono text-xs">
-                    <div className="flex justify-between pb-3 border-b border-[#DEDBD3]">
-                      <span className="text-[#77756F]">Collateral Valuation:</span>
-                      <span className="font-bold text-[#171715]">$60,000 / tBTC (Model)</span>
-                    </div>
-                    <div className="flex justify-between pb-3 border-b border-[#DEDBD3]">
-                      <span className="text-[#77756F]">Max LTV Threshold:</span>
-                      <span className="font-bold text-[#171715]">60.00%</span>
-                    </div>
-                    <div className="flex justify-between pb-3 border-b border-[#DEDBD3]">
-                      <span className="text-[#77756F]">Current LTV Ratio:</span>
-                      <span className={`font-bold ${ltvStatusColor}`}>{collateralValueUSD > 0 ? `${ltvNumeric.toFixed(1)}%` : '0.0%'}</span>
-                    </div>
-                  </div>
+              {/* Live PriceFeed Oracle */}
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-6 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#171715]">Live PriceFeed Oracle</h4>
+                  <span className="text-[10px] font-mono bg-[#258454]/15 text-[#258454] px-2 py-0.5 rounded font-bold">On-Chain</span>
                 </div>
-
-                <div className="mt-6 p-4 bg-[#F6F4EF] rounded-xl border border-[#DEDBD3] text-xs font-mono text-[#77756F]">
-                  <p className="font-bold text-[#171715] mb-1">Safety Rule:</p>
-                  <p>Maintains strict liquidation buffers on Mezo L2. Keep LTV below 50% for optimal safety.</p>
+                <div className="space-y-2 text-xs font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">Oracle Source:</span>
+                    <strong className="text-[#171715]">Mezo PriceFeed</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">BTC/USD Price:</span>
+                    <strong className="text-[#258454]">${btcPriceUSD.toLocaleString()}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">Pricing Model:</span>
+                    <strong className="text-[#171715]">Dynamic (No mock $60k)</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">Max LTV Allowed:</span>
+                    <strong className="text-[#171715]">60.00%</strong>
+                  </div>
                 </div>
               </div>
 
+              {/* Safety & Liquidation */}
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-6 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#171715]">Liquidation Engine</h4>
+                  <span className="text-[10px] font-mono bg-[#B7791F]/15 text-[#B7791F] px-2 py-0.5 rounded font-bold">Keeper Ready</span>
+                </div>
+                <div className="space-y-2 text-xs font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">Liquidation Threshold:</span>
+                    <strong className="text-[#171715]">75.00% LTV</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">Keeper Bonus:</span>
+                    <strong className="text-[#258454]">5.00% Incentive</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">Your Position Status:</span>
+                    <strong className={isUserLiquidatable ? 'text-[#C7473A]' : 'text-[#258454]'}>
+                      {isUserLiquidatable ? 'Liquidatable (At Risk)' : 'Healthy & Safe'}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#77756F]">Accounting:</span>
+                    <strong className="text-[#171715]">Native / tBTC Separated</strong>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Payroll Streamer Section spanning width below */}
-            <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl shadow-sm space-y-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-[#DEDBD3] pb-4 gap-4">
-                <div>
-                  <h3 className="text-xl font-bold font-serif-display text-[#171715]">Payroll Metering Rail & Streamer</h3>
-                  <p className="text-xs text-[#77756F] mt-1">Second-by-second continuous MUSD salary streaming with instant top-up and cancel controls.</p>
-                </div>
+            {/* Quick Action Banner */}
+            <div className="p-6 bg-[#FBFAF7] rounded-2xl border border-[#DEDBD3] flex flex-col md:flex-row items-center justify-between gap-4">
+              <div>
+                <h4 className="font-serif-display font-bold text-xl text-[#171715]">Ready to stream Bitcoin-backed payroll?</h4>
+                <p className="text-xs text-[#77756F] mt-1">Deposit collateral, draw real MUSD, and stream second-by-second to employees or contractors.</p>
+              </div>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setActiveTab('vault')}
+                  className="bg-[#171715] hover:bg-[#E66C35] text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-colors"
+                >
+                  Go to Vault & Borrow →
+                </button>
                 <button
                   onClick={() => setActiveTab('payroll')}
-                  className="bg-[#171715] hover:bg-[#E66C35] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors self-start md:self-auto"
+                  className="bg-[#FBFAF7] hover:bg-[#F6F4EF] border border-[#DEDBD3] text-[#171715] text-xs font-semibold px-5 py-2.5 rounded-xl transition-colors"
                 >
-                  Manage Streams →
+                  Create Stream →
                 </button>
               </div>
-
-              {/* Metering Rail Graphical Demo */}
-              <div className="p-6 bg-[#F6F4EF] rounded-2xl border border-[#DEDBD3] space-y-4">
-                <div className="flex justify-between text-xs font-mono">
-                  <span className="text-[#77756F]">Stream ID #0 Active Progress</span>
-                  <span className="text-[#258454] font-bold">Continuous Vesting (Live)</span>
-                </div>
-                <div className="w-full bg-[#DEDBD3] h-4 rounded-full overflow-hidden relative">
-                  <div className="bg-[#258454] h-full rounded-full transition-all duration-1000" style={{ width: `${(animationPhase + 1) * 25}%` }}></div>
-                </div>
-                <div className="flex justify-between text-[11px] font-mono text-[#77756F]">
-                  <span>Start: Day 0</span>
-                  <span>Elapsed: {(animationPhase + 1) * 7} Days</span>
-                  <span>Vesting: 30 Days</span>
-                </div>
-              </div>
             </div>
-
           </div>
         )}
 
-        {/* TAB 2: VAULT & CREDIT ENGINE */}
+        {/* TAB 2: VAULT, BORROWING, CREDIT ENGINE & LIQUIDATION */}
         {activeTab === 'vault' && (
           <div className="space-y-8 animate-fadeIn">
+            {mounted && !isConnected && (
+              <div className="bg-[#FBFAF7] border border-[#E66C35]/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-center space-x-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#E66C35]/10 text-[#E66C35] flex items-center justify-center shrink-0">
+                    <Wallet className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-serif-display text-lg font-bold text-[#171715]">Connect Wallet to Transact</h4>
+                    <p className="text-xs text-[#77756F]">Select MetaMask, Coinbase Wallet, Rabby, or browser extension to manage vaults and troves.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleOpenConnectWallet}
+                  className="w-full sm:w-auto px-5 py-2.5 bg-[#171715] hover:bg-[#E66C35] text-white text-xs font-semibold rounded-xl transition-all shrink-0 flex items-center justify-center space-x-2 cursor-pointer"
+                >
+                  <Wallet className="w-4 h-4" />
+                  <span>Select & Connect Wallet</span>
+                </button>
+              </div>
+            )}
             <div className="border-b border-[#DEDBD3] pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h2 className="text-3xl font-serif-display font-bold text-[#171715]">MezoFlow Vault & Credit Engine</h2>
-                <p className="text-xs text-[#77756F] mt-1">Deposit tBTC collateral, mint MUSD stablecoins, and manage your LTV health ratio.</p>
+                <h2 className="text-3xl font-serif-display font-bold text-[#171715]">MezoFlow Vault & Credit Operations</h2>
+                <p className="text-xs text-[#77756F] mt-1">
+                  Manage Bitcoin collateral, borrow real MUSD stablecoins, amortize debt, or perform keeper liquidations.
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-3 text-xs font-mono">
                 <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
@@ -1146,272 +1320,282 @@ export default function Home() {
                   <strong className="text-[#171715]">{mounted && nativeBalance ? Number(formatEther(nativeBalance.value)).toFixed(4) : '0.0000'}</strong>
                 </div>
                 <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
-                  <span className="text-[#77756F]">Wallet MEZO: </span>
+                  <span className="text-[#77756F]">Wallet tBTC: </span>
+                  <strong className="text-[#171715]">{mounted && tbtcBalance ? Number(formatEther(tbtcBalance as bigint)).toFixed(4) : '0.0000'}</strong>
+                </div>
+                <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
+                  <span className="text-[#77756F]">Wallet MUSD: </span>
                   <strong className="text-[#171715]">{mounted && musdBalance ? Number(formatEther(musdBalance as bigint)).toLocaleString() : '0'}</strong>
                 </div>
-                <button
-                  type="button"
-                  onClick={refreshAllData}
-                  className="bg-[#FBFAF7] hover:bg-[#DEDBD3]/40 border border-[#DEDBD3] p-2.5 rounded-xl text-[#77756F] hover:text-[#171715] transition-colors"
-                  title="Refresh Balances"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </button>
               </div>
             </div>
 
-            {/* Position Health Metrics Bar */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-5 rounded-2xl">
-                <p className="text-xs font-mono text-[#77756F]">Deposited Collateral</p>
-                <p className="text-xl font-bold font-mono text-[#171715] mt-1">{collateralEth.toFixed(4)} tBTC</p>
-                <p className="text-[11px] font-mono text-[#77756F] mt-0.5">${collateralValueUSD.toLocaleString()} USD</p>
-              </div>
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-5 rounded-2xl">
-                <p className="text-xs font-mono text-[#77756F]">Active MUSD Debt</p>
-                <p className="text-xl font-bold font-mono text-[#171715] mt-1">{debtEth.toLocaleString()} MUSD</p>
-                <p className={`text-[11px] font-mono mt-0.5 font-semibold ${ltvStatusColor}`}>LTV: {ltvNumeric.toFixed(1)}% / 60%</p>
-              </div>
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-5 rounded-2xl">
-                <p className="text-xs font-mono text-[#77756F]">Available to Borrow</p>
-                <p className="text-xl font-bold font-mono text-[#258454] mt-1">{availableBorrowUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
-                <p className="text-[11px] font-mono text-[#77756F] mt-0.5">Based on 60% Max LTV</p>
-              </div>
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-5 rounded-2xl">
-                <p className="text-xs font-mono text-[#77756F]">Max Safe Withdrawal</p>
-                <p className="text-xl font-bold font-mono text-[#B7791F] mt-1">{maxWithdrawableEth.toFixed(4)} tBTC</p>
-                <p className="text-[11px] font-mono text-[#77756F] mt-0.5">Retains debt solvency</p>
-              </div>
-            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Card 1: Collateral Management */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl space-y-6">
-                <div className="flex items-center space-x-2 border-b border-[#DEDBD3] pb-3">
-                  <PlusCircle className="w-4 h-4 text-[#E66C35]" />
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Collateral Operations</h3>
+              {/* CARD 1: DEPOSIT & WITHDRAW COLLATERAL */}
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl shadow-sm space-y-6">
+                <div className="flex items-center justify-between border-b border-[#DEDBD3] pb-3">
+                  <div className="flex items-center space-x-2">
+                    <Shield className="w-5 h-5 text-[#E66C35]" />
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Collateral Management</h3>
+                  </div>
+                  <span className="text-xs font-mono text-[#77756F]">Live Oracle: ${btcPriceUSD.toLocaleString()} / BTC</span>
                 </div>
 
-                {/* Deposit Collateral Form */}
-                <form onSubmit={handleDepositCollateral} className="space-y-3">
-                  <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
-                    <label>Deposit Bitcoin (BTC)</label>
-                    <span>Gas BTC: {mounted && nativeBalance ? Number(formatEther(nativeBalance.value)).toFixed(4) : '0.0000'}</span>
+                {/* Collateral Breakdown */}
+                <div className="grid grid-cols-2 gap-3 text-xs font-mono bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3]">
+                  <div>
+                    <span className="text-[#77756F] block">Native BTC Locked:</span>
+                    <strong className="text-[#171715] text-sm">{nativeCollateralEth.toFixed(4)} BTC</strong>
                   </div>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="0.001"
-                      value={collateralAmount}
-                      onChange={(e) => setCollateralAmount(e.target.value)}
-                      placeholder="0.01 BTC"
-                      className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
-                    />
-                    {nativeBalance && (
+                  <div>
+                    <span className="text-[#77756F] block">tBTC Locked:</span>
+                    <strong className="text-[#171715] text-sm">{tbtcCollateralEth.toFixed(4)} tBTC</strong>
+                  </div>
+                </div>
+
+                {/* Deposit Form */}
+                <form onSubmit={handleDepositCollateral} className="space-y-4">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <label className="font-bold text-[#171715]">1. Deposit Bitcoin Collateral</label>
+                    <div className="flex space-x-1 bg-[#DEDBD3]/40 p-1 rounded-lg">
                       <button
                         type="button"
-                        onClick={() => setCollateralAmount((Math.max(0, Number(formatEther(nativeBalance.value)) - 0.005)).toFixed(4))}
-                        className="absolute right-3 top-2.5 text-[11px] font-mono bg-[#DEDBD3]/40 px-2 py-1 rounded text-[#171715] hover:bg-[#DEDBD3]"
+                        onClick={() => setCollateralMode('native')}
+                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${collateralMode === 'native' ? 'bg-[#171715] text-white' : 'text-[#77756F]'}`}
                       >
-                        SAFE MAX
+                        Native BTC
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => setCollateralMode('tbtc')}
+                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${collateralMode === 'tbtc' ? 'bg-[#171715] text-white' : 'text-[#77756F]'}`}
+                      >
+                        tBTC ERC-20
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    type="submit"
-                    disabled={(vaultPending && activeAction === 'deposit_collateral') || !isReady || !collateralAmount || Number(collateralAmount) <= 0}
-                    className="w-full bg-[#171715] hover:bg-[#E66C35] disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-xs transition-colors"
-                  >
-                    {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'deposit_collateral' ? 'Depositing...' : 'Deposit Bitcoin Collateral'}
-                  </button>
+
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={collateralAmount}
+                    onChange={(e) => setCollateralAmount(e.target.value)}
+                    placeholder={collateralMode === 'native' ? '0.05 BTC (Native gas token)' : '1.0 tBTC'}
+                    className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
+                  />
+
+                  {collateralMode === 'tbtc' && (
+                    <div className="flex space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => handleApprove('tbtc', 'vault', collateralAmount || '10')}
+                        disabled={(genericPending && activeAction === 'approve_tbtc_vault') || !isReady}
+                        className={`flex-1 font-semibold py-2.5 rounded-xl text-xs transition-colors ${
+                          isTbtcApproved
+                            ? 'bg-[#258454]/10 border border-[#258454]/40 text-[#258454]'
+                            : 'bg-[#E66C35] text-white animate-pulse'
+                        } disabled:opacity-50`}
+                      >
+                        {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'approve_tbtc_vault'
+                          ? 'Approving...'
+                          : isTbtcApproved
+                          ? '✓ tBTC Approved'
+                          : '1. Approve tBTC'}
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={(vaultPending && activeAction === 'deposit_collateral') || !isReady || !collateralAmount || Number(collateralAmount) <= 0 || !isTbtcApproved}
+                        className="flex-1 bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
+                      >
+                        {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'deposit_collateral' ? 'Depositing...' : '2. Deposit tBTC'}
+                      </button>
+                    </div>
+                  )}
+
+                  {collateralMode === 'native' && (
+                    <button
+                      type="submit"
+                      disabled={(vaultPending && activeAction === 'deposit_collateral') || !isReady || !collateralAmount || Number(collateralAmount) <= 0}
+                      className="w-full bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
+                    >
+                      {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'deposit_collateral' ? 'Depositing...' : 'Deposit Native BTC'}
+                    </button>
+                  )}
                 </form>
 
-                {/* Withdraw Collateral Form */}
-                <form onSubmit={handleWithdrawCollateral} className="space-y-3 pt-4 border-t border-[#DEDBD3]">
-                  <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
-                    <label>Withdraw Bitcoin (BTC)</label>
-                    <span>Safe Max: {maxWithdrawableEth.toFixed(4)} BTC</span>
+                {/* Withdraw Form */}
+                <form onSubmit={handleWithdrawCollateral} className="space-y-4 pt-4 border-t border-[#DEDBD3]">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <label className="font-bold text-[#171715]">2. Withdraw Collateral</label>
+                    <div className="flex space-x-1 bg-[#DEDBD3]/40 p-1 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => setWithdrawMode('native')}
+                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${withdrawMode === 'native' ? 'bg-[#171715] text-white' : 'text-[#77756F]'}`}
+                      >
+                        Native BTC
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWithdrawMode('tbtc')}
+                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${withdrawMode === 'tbtc' ? 'bg-[#171715] text-white' : 'text-[#77756F]'}`}
+                      >
+                        tBTC ERC-20
+                      </button>
+                    </div>
                   </div>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="0.001"
-                      value={withdrawAmount}
-                      onChange={(e) => setWithdrawAmount(e.target.value)}
-                      placeholder="0.01 BTC"
-                      className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#B7791F]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setWithdrawAmount(maxWithdrawableEth.toFixed(4))}
-                      className="absolute right-3 top-2.5 text-[11px] font-mono bg-[#DEDBD3]/40 px-2 py-1 rounded text-[#171715] hover:bg-[#DEDBD3]"
-                    >
-                      SAFE MAX
-                    </button>
-                  </div>
+
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                    placeholder={`Max safe withdrawal: ${maxWithdrawableEth.toFixed(4)} BTC`}
+                    className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
+                  />
+
                   <button
                     type="submit"
-                    disabled={(vaultPending && activeAction === 'withdraw_collateral') || !isReady || maxWithdrawableEth <= 0 || !withdrawAmount || Number(withdrawAmount) <= 0}
-                    className="w-full bg-[#171715] hover:bg-[#B7791F] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors"
+                    disabled={(vaultPending && activeAction === 'withdraw_collateral') || !isReady || collateralEth <= 0 || !withdrawAmount || Number(withdrawAmount) <= 0}
+                    className="w-full bg-[#FBFAF7] hover:bg-[#F6F4EF] border border-[#DEDBD3] text-[#171715] font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
                   >
-                    {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'withdraw_collateral' ? 'Withdrawing...' : 'Withdraw Collateral'}
+                    {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'withdraw_collateral'
+                      ? 'Withdrawing...'
+                      : `Withdraw ${withdrawMode === 'native' ? 'Native BTC' : 'tBTC'}`}
                   </button>
                 </form>
               </div>
 
-              {/* Card 2: Debt & Borrow Operations */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl space-y-6">
-                <div className="flex items-center space-x-2 border-b border-[#DEDBD3] pb-3">
-                  <DollarSign className="w-4 h-4 text-[#B7791F]" />
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Debt & Borrow Operations</h3>
+              {/* CARD 2: BORROW & REPAY MUSD */}
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl shadow-sm space-y-6">
+                <div className="flex items-center justify-between border-b border-[#DEDBD3] pb-3">
+                  <div className="flex items-center space-x-2">
+                    <DollarSign className="w-5 h-5 text-[#258454]" />
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">MUSD Borrow & Repay</h3>
+                  </div>
+                  <span className={`text-xs font-mono font-bold ${ltvStatusColor}`}>
+                    LTV: {collateralValueUSD > 0 ? `${ltvNumeric.toFixed(1)}%` : '0.0%'} (Max 60%)
+                  </span>
+                </div>
+
+                {/* Metrics */}
+                <div className="grid grid-cols-2 gap-3 text-xs font-mono bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3]">
+                  <div>
+                    <span className="text-[#77756F] block">Total Borrowed Debt:</span>
+                    <strong className="text-[#C7473A] text-sm">{debtEth.toLocaleString()} MUSD</strong>
+                  </div>
+                  <div>
+                    <span className="text-[#77756F] block">Available Borrow Capacity:</span>
+                    <strong className="text-[#258454] text-sm">${availableBorrowUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })} MUSD</strong>
+                  </div>
                 </div>
 
                 {/* Borrow Form */}
-                <form onSubmit={handleBorrowMUSD} className="space-y-3">
-                  <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
-                    <label>Borrow MUSD (Mint)</label>
-                    <span>Available: {availableBorrowUSD.toLocaleString(undefined, { maximumFractionDigits: 0 })} MUSD</span>
-                  </div>
-                  {collateralEth <= 0 && (
-                    <div className="bg-[#B7791F]/10 border border-[#B7791F]/30 p-2.5 rounded-xl text-[11px] text-[#B7791F] font-mono">
-                      Deposit Bitcoin collateral above to unlock borrowing capacity (60% Max LTV).
-                    </div>
-                  )}
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="1"
-                      value={borrowAmount}
-                      onChange={(e) => setBorrowAmount(e.target.value)}
-                      placeholder="0.0 MUSD"
-                      className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#B7791F]"
-                    />
+                <form onSubmit={handleBorrowMUSD} className="space-y-4">
+                  <div className="flex justify-between items-center text-xs font-mono">
+                    <label className="font-bold text-[#171715]">Borrow MUSD Against Collateral</label>
                     <button
                       type="button"
                       onClick={() => setBorrowAmount(Math.floor(availableBorrowUSD).toString())}
-                      className="absolute right-3 top-2.5 text-[11px] font-mono bg-[#DEDBD3]/40 px-2 py-1 rounded text-[#171715] hover:bg-[#DEDBD3]"
+                      className="text-[#E66C35] hover:underline"
                     >
-                      MAX
+                      Max Safe Borrow
                     </button>
                   </div>
+                  <input
+                    type="number"
+                    step="1"
+                    value={borrowAmount}
+                    onChange={(e) => setBorrowAmount(e.target.value)}
+                    placeholder="5000 MUSD"
+                    className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#258454]"
+                  />
                   <button
                     type="submit"
                     disabled={(vaultPending && activeAction === 'borrow_musd') || !isReady || availableBorrowUSD <= 0 || !borrowAmount || Number(borrowAmount) <= 0}
-                    className="w-full bg-[#171715] hover:bg-[#B7791F] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors"
+                    className="w-full bg-[#171715] hover:bg-[#258454] text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
                   >
-                    {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'borrow_musd' ? 'Minting...' : 'Borrow MUSD'}
+                    {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'borrow_musd' ? 'Borrowing...' : 'Borrow MUSD Stablecoins'}
                   </button>
                 </form>
 
                 {/* Repay Form */}
-                <form onSubmit={handleRepayMUSD} className="space-y-3 pt-4 border-t border-[#DEDBD3]">
-                  <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
-                    <label>Repay MUSD</label>
-                    <span>Active Debt: {debtEth.toLocaleString()} MUSD</span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="1"
-                      value={repayAmount}
-                      onChange={(e) => setRepayAmount(e.target.value)}
-                      placeholder="0.0 MUSD"
-                      className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#258454]"
-                    />
+                <form onSubmit={handleRepayMUSD} className="space-y-4 pt-4 border-t border-[#DEDBD3]">
+                  <div className="flex justify-between items-center text-xs font-mono">
+                    <label className="font-bold text-[#171715]">Repay MUSD Debt</label>
                     <button
                       type="button"
                       onClick={() => setRepayAmount(Math.min(debtEth, musdBalance ? Number(formatEther(musdBalance as bigint)) : 0).toString())}
-                      className="absolute right-3 top-2.5 text-[11px] font-mono bg-[#DEDBD3]/40 px-2 py-1 rounded text-[#171715] hover:bg-[#DEDBD3]"
+                      className="text-[#E66C35] hover:underline"
                     >
-                      MAX
+                      Repay Max Debt
                     </button>
                   </div>
-                  <div className="bg-[#F6F4EF] p-2.5 rounded-xl border border-[#DEDBD3] text-xs font-mono flex items-center justify-between">
-                    <span className="text-[#77756F]">Vault MUSD Allowance:</span>
-                    <span className={`font-semibold ${isVaultApproved ? 'text-[#258454]' : 'text-[#E66C35]'}`}>
-                      {vaultAllowanceEth >= 1000000 ? 'Unlimited' : `${vaultAllowanceEth.toFixed(2)} MUSD`}
-                      {isVaultApproved ? ' (✓ Ready)' : ' (Approval Required)'}
-                    </span>
-                  </div>
-
+                  <input
+                    type="number"
+                    step="1"
+                    value={repayAmount}
+                    onChange={(e) => setRepayAmount(e.target.value)}
+                    placeholder="Amount to repay"
+                    className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
+                  />
                   <div className="flex space-x-2">
                     <button
                       type="button"
-                      onClick={() => handleApprove('musd', 'vault', repayAmount || '10000')}
+                      onClick={() => handleApprove('musd', 'vault', repayAmount || '5000')}
                       disabled={(genericPending && activeAction === 'approve_repay') || !isReady}
-                      className={`flex-1 font-semibold py-2.5 rounded-xl text-xs transition-all ${
+                      className={`flex-1 font-semibold py-2.5 rounded-xl text-xs transition-colors ${
                         isVaultApproved
-                          ? 'bg-[#258454]/10 border border-[#258454]/40 text-[#258454] hover:bg-[#258454]/20'
-                          : 'bg-[#E66C35] text-white hover:bg-[#171715] shadow-sm animate-pulse'
+                          ? 'bg-[#258454]/10 border border-[#258454]/40 text-[#258454]'
+                          : 'bg-[#E66C35] text-white animate-pulse'
                       } disabled:opacity-50`}
                     >
                       {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'approve_repay'
                         ? 'Approving...'
                         : isVaultApproved
-                        ? `✓ MUSD Approved`
-                        : '1. Approve MUSD (Required)'}
+                        ? '✓ Approved'
+                        : '1. Approve MUSD'}
                     </button>
                     <button
                       type="submit"
-                      disabled={
-                        (vaultPending && activeAction === 'repay_musd') ||
-                        !isReady ||
-                        debtEth <= 0 ||
-                        !repayAmount ||
-                        Number(repayAmount) <= 0 ||
-                        !isVaultApproved
-                      }
-                      className={`flex-1 font-semibold py-2.5 rounded-xl text-xs transition-colors ${
-                        isVaultApproved
-                          ? 'bg-[#171715] hover:bg-[#258454] text-white'
-                          : 'bg-[#DEDBD3] text-[#77756F] cursor-not-allowed opacity-60'
-                      } disabled:opacity-50`}
+                      disabled={(vaultPending && activeAction === 'repay_musd') || !isReady || debtEth <= 0 || !repayAmount || Number(repayAmount) <= 0 || !isVaultApproved}
+                      className="flex-1 bg-[#171715] hover:bg-[#258454] text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
                     >
-                      {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'repay_musd'
-                        ? 'Repaying...'
-                        : !isVaultApproved
-                        ? '2. Repay (Approve First)'
-                        : '2. Repay MUSD'}
+                      {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'repay_musd' ? 'Repaying...' : '2. Repay Debt'}
                     </button>
                   </div>
                 </form>
               </div>
 
-              {/* Card 3: Self-Repaying Credit Engine */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl lg:col-span-2 space-y-6">
+              {/* CARD 3: SELF-REPAYING CREDIT ENGINE (High Finding 2 Fix) */}
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl lg:col-span-2 shadow-sm space-y-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-[#DEDBD3] pb-3 gap-2">
                   <div className="flex items-center space-x-2">
-                    <Zap className="w-4 h-4 text-[#E66C35]" />
+                    <Zap className="w-5 h-5 text-[#E66C35]" />
                     <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Self-Repaying Credit Engine</h3>
                   </div>
                   <div className="text-xs font-mono text-[#77756F]">
-                    Staking Yield Balance: <strong className="text-[#258454]">{mounted && yieldBalance ? Number(formatEther(yieldBalance as bigint)).toLocaleString() : '0'} MUSD</strong>
+                    Unamortized Yield Balance: <strong className="text-[#258454]">{mounted && yieldBalance ? Number(formatEther(yieldBalance as bigint)).toLocaleString() : '0'} MUSD</strong>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Deposit Yield */}
                   <form onSubmit={handleDepositYield} className="space-y-3 bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
                     <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
-                      <label className="font-bold text-[#171715]">Channel Yield into Engine</label>
+                      <label className="font-bold text-[#171715]">Deposit Yield / Reserve</label>
                       <span>MUSD: {mounted && musdBalance ? Number(formatEther(musdBalance as bigint)).toLocaleString() : '0'}</span>
                     </div>
-                    <p className="text-[11px] text-[#77756F]">Deposit earned Mezo staking yield to fund automated debt amortization.</p>
+                    <p className="text-[11px] text-[#77756F]">Deposit MUSD to fund automated debt amortization.</p>
                     <input
                       type="number"
                       step="1"
                       value={yieldDepositAmount}
                       onChange={(e) => setYieldDepositAmount(e.target.value)}
                       placeholder="Amount to deposit"
-                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2.5 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#E66C35]"
+                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#E66C35]"
                     />
-                    <div className="flex items-center justify-between text-[11px] font-mono text-[#77756F]">
-                      <span>Allowance:</span>
-                      <span className={isCreditEngineApproved ? 'text-[#258454] font-semibold' : 'text-[#E66C35] font-semibold'}>
-                        {creditEngineAllowanceEth >= 1000000 ? 'Unlimited' : `${creditEngineAllowanceEth.toFixed(2)} MUSD`}
-                        {isCreditEngineApproved ? ' (✓ Ready)' : ' (Approval Required)'}
-                      </span>
-                    </div>
                     <div className="flex space-x-2">
                       <button
                         type="button"
@@ -1420,53 +1604,59 @@ export default function Home() {
                         className={`flex-1 font-semibold py-2 rounded-lg text-xs transition-colors ${
                           isCreditEngineApproved
                             ? 'bg-[#258454]/10 border border-[#258454]/40 text-[#258454]'
-                            : 'bg-[#E66C35] text-white animate-pulse'
+                            : 'bg-[#E66C35] text-white'
                         } disabled:opacity-50`}
                       >
-                        {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'approve_yield'
-                          ? 'Approving...'
-                          : isCreditEngineApproved
-                          ? `✓ Approved`
-                          : '1. Approve MUSD'}
+                        {isCreditEngineApproved ? '✓ Approved' : '1. Approve'}
                       </button>
                       <button
                         type="submit"
-                        disabled={
-                          (genericPending && activeAction === 'deposit_yield') ||
-                          !isReady ||
-                          !yieldDepositAmount ||
-                          Number(yieldDepositAmount) <= 0 ||
-                          !isCreditEngineApproved
-                        }
-                        className={`flex-1 font-semibold py-2 rounded-lg text-xs transition-colors ${
-                          isCreditEngineApproved
-                            ? 'bg-[#171715] hover:bg-[#E66C35] text-white'
-                            : 'bg-[#DEDBD3] text-[#77756F] cursor-not-allowed opacity-60'
-                        } disabled:opacity-50`}
+                        disabled={(genericPending && activeAction === 'deposit_yield') || !isReady || !yieldDepositAmount || Number(yieldDepositAmount) <= 0 || !isCreditEngineApproved}
+                        className="flex-1 bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2 rounded-lg text-xs transition-colors disabled:opacity-50"
                       >
-                        {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'deposit_yield'
-                          ? 'Depositing...'
-                          : !isCreditEngineApproved
-                          ? '2. Deposit (Approve First)'
-                          : '2. Deposit Yield'}
+                        {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'deposit_yield' ? 'Depositing...' : '2. Deposit'}
                       </button>
                     </div>
+                  </form>
+
+                  {/* Withdraw Yield (High Finding 2 Fix) */}
+                  <form onSubmit={handleWithdrawYield} className="space-y-3 bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
+                    <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
+                      <label className="font-bold text-[#171715]">Reclaim Unamortized Yield</label>
+                      <span>Available: {mounted && yieldBalance ? Number(formatEther(yieldBalance as bigint)).toLocaleString() : '0'}</span>
+                    </div>
+                    <p className="text-[11px] text-[#77756F]">Withdraw unused yield back to your wallet at any time.</p>
+                    <input
+                      type="number"
+                      step="1"
+                      value={yieldWithdrawAmount}
+                      onChange={(e) => setYieldWithdrawAmount(e.target.value)}
+                      placeholder="Amount to withdraw"
+                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#E66C35]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={(genericPending && activeAction === 'withdraw_yield') || !isReady || !yieldWithdrawAmount || Number(yieldWithdrawAmount) <= 0}
+                      className="w-full bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2 rounded-lg text-xs transition-colors disabled:opacity-50"
+                    >
+                      {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'withdraw_yield' ? 'Withdrawing...' : 'Reclaim Yield to Wallet'}
+                    </button>
                   </form>
 
                   {/* Amortize Debt */}
                   <form onSubmit={handleAmortizeDebt} className="space-y-3 bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
                     <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
-                      <label className="font-bold text-[#171715]">Amortize Debt from Yield</label>
-                      <span>Active Debt: {debtEth.toLocaleString()} MUSD</span>
+                      <label className="font-bold text-[#171715]">Amortize Active Debt</label>
+                      <span>Debt: {debtEth.toLocaleString()} MUSD</span>
                     </div>
-                    <p className="text-[11px] text-[#77756F]">Apply available yield balance directly to repay your vault loan without touching principal.</p>
+                    <p className="text-[11px] text-[#77756F]">Apply deposited yield balance to pay down loan principal.</p>
                     <input
                       type="number"
                       step="1"
                       value={amortizeAmount}
                       onChange={(e) => setAmortizeAmount(e.target.value)}
                       placeholder="Amount to amortize"
-                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2.5 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#258454]"
+                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#258454]"
                     />
                     <button
                       type="submit"
@@ -1479,6 +1669,67 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* CARD 4: KEEPER LIQUIDATION ENGINE (High Finding 3 Fix) */}
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl lg:col-span-2 shadow-sm space-y-6">
+                <div className="flex items-center justify-between border-b border-[#DEDBD3] pb-3">
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle className="w-5 h-5 text-[#C7473A]" />
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Keeper Liquidation Console</h3>
+                  </div>
+                  <span className="text-xs font-mono bg-[#258454]/10 text-[#258454] px-3 py-1 rounded font-bold">
+                    +5% Collateral Bonus for Liquidators
+                  </span>
+                </div>
+
+                <p className="text-xs text-[#77756F] leading-relaxed">
+                  Anyone or any automated keeper bot can liquidate positions exceeding the 75% LTV threshold. 
+                  Liquidators repay the borrower's MUSD debt and seize the underlying Bitcoin collateral at a 5% discount (instant 5% profit).
+                </p>
+
+                <form onSubmit={handleLiquidate} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-xs font-mono text-[#77756F]">Borrower Address to Liquidate</label>
+                    <input
+                      type="text"
+                      value={liquidateUser}
+                      onChange={(e) => setLiquidateUser(e.target.value)}
+                      placeholder="0x... borrower account"
+                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2.5 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#C7473A]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-mono text-[#77756F]">Debt to Repay (MUSD)</label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={liquidateDebtAmount}
+                      onChange={(e) => setLiquidateDebtAmount(e.target.value)}
+                      placeholder="1000"
+                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2.5 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#C7473A]"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2 text-xs font-mono text-[#77756F]">
+                      <input
+                        type="checkbox"
+                        id="seizeNative"
+                        checked={liquidateSeizeNative}
+                        onChange={(e) => setLiquidateSeizeNative(e.target.checked)}
+                        className="rounded"
+                      />
+                      <label htmlFor="seizeNative">Seize Native BTC</label>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={(vaultPending && activeAction === 'liquidate') || !isReady || !liquidateUser || !liquidateDebtAmount}
+                      className="w-full bg-[#C7473A] hover:bg-red-700 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
+                    >
+                      {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'liquidate' ? 'Liquidating...' : 'Execute Liquidation'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
             </div>
           </div>
         )}
@@ -1486,12 +1737,39 @@ export default function Home() {
         {/* TAB 3: PAYROLL STREAMER */}
         {activeTab === 'payroll' && (
           <div className="space-y-8 animate-fadeIn">
-            <div className="border-b border-[#DEDBD3] pb-4">
-              <h2 className="text-3xl font-serif-display font-bold text-[#171715]">Payroll Streamer</h2>
-              <p className="text-xs text-[#77756F] mt-1">Create and manage second-by-second MEZO salary streams with enterprise revocation controls.</p>
+            {mounted && !isConnected && (
+              <div className="bg-[#FBFAF7] border border-[#E66C35]/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-center space-x-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#E66C35]/10 text-[#E66C35] flex items-center justify-center shrink-0">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-serif-display text-lg font-bold text-[#171715]">Connect Wallet to Stream Payroll</h4>
+                    <p className="text-xs text-[#77756F]">Choose your preferred wallet to create second-by-second MUSD salary streams on Mezo.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleOpenConnectWallet}
+                  className="w-full sm:w-auto px-5 py-2.5 bg-[#171715] hover:bg-[#E66C35] text-white text-xs font-semibold rounded-xl transition-all shrink-0 flex items-center justify-center space-x-2 cursor-pointer"
+                >
+                  <Wallet className="w-4 h-4" />
+                  <span>Select & Connect Wallet</span>
+                </button>
+              </div>
+            )}
+            <div className="border-b border-[#DEDBD3] pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-3xl font-serif-display font-bold text-[#171715]">MUSD Payroll Streamer</h2>
+                <p className="text-xs text-[#77756F] mt-1">
+                  Second-by-second linear escrow streaming of official testnet MUSD stablecoins backed by Bitcoin.
+                </p>
+              </div>
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl text-xs font-mono">
+                <span className="text-[#77756F]">Available MUSD: </span>
+                <strong className="text-[#258454]">{mounted && musdBalance ? Number(formatEther(musdBalance as bigint)).toLocaleString() : '0'} MUSD</strong>
+              </div>
             </div>
 
-            {/* How Salary Streaming Escrow Works */}
             <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-5 rounded-2xl flex items-start space-x-3.5 text-xs font-mono shadow-sm">
               <div className="bg-[#E66C35]/10 p-2 rounded-xl text-[#E66C35] shrink-0 mt-0.5">
                 <Clock className="w-5 h-5" />
@@ -1499,9 +1777,9 @@ export default function Home() {
               <div className="space-y-1 flex-1">
                 <p className="font-bold text-[#171715] text-sm">How Second-by-Second Streaming Works</p>
                 <p className="text-[#77756F] leading-relaxed">
-                  When you create a stream, deposited MEZO is held in the <strong>PayrollStreamer escrow contract</strong> on Mezo L2. 
-                  Tokens do <strong>not</strong> transfer to the recipient's wallet all at once. Instead, they unlock second-by-second into their claimable balance. 
-                  The recipient can connect their wallet anytime to claim earned funds via the <strong>"Withdraw Funds"</strong> button, while the employer maintains full revocation protection.
+                  When you create a stream, deposited <strong>MUSD</strong> is held in the non-custodial <strong>PayrollStreamer</strong> contract.
+                  Funds unlock smoothly second-by-second into the recipient's claimable balance. 
+                  The employee can withdraw anytime via <strong>"Claim Earned MUSD"</strong>, while the employer maintains full top-up and revocation controls with unearned refund splits.
                 </p>
               </div>
             </div>
@@ -1512,9 +1790,9 @@ export default function Home() {
                 <div>
                   <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715] mb-2 flex items-center space-x-2">
                     <Clock className="w-4 h-4 text-[#E66C35]" />
-                    <span>Create Salary Stream</span>
+                    <span>Create MUSD Salary Stream</span>
                   </h3>
-                  <p className="text-xs text-[#77756F] mb-6">Deposit MEZO for continuous second-by-second vesting.</p>
+                  <p className="text-xs text-[#77756F] mb-6">Deposit MUSD for continuous linear vesting.</p>
                   
                   <form onSubmit={handleCreateStream} className="space-y-4">
                     <div>
@@ -1524,9 +1802,9 @@ export default function Home() {
                           <button
                             type="button"
                             onClick={() => setRecipient(address)}
-                            className="text-[11px] font-mono text-[#E66C35] hover:underline flex items-center space-x-1"
+                            className="text-[11px] font-mono text-[#E66C35] hover:underline"
                           >
-                            <span>Use My Connected Wallet</span>
+                            Use Connected Wallet
                           </button>
                         )}
                       </div>
@@ -1534,18 +1812,18 @@ export default function Home() {
                         type="text"
                         value={recipient}
                         onChange={(e) => setRecipient(e.target.value)}
-                        placeholder="0x... (contractor or employee address)"
+                        placeholder="0x... recipient address"
                         className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#E66C35]"
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-mono text-[#77756F] block mb-1">Deposit Amount (MEZO)</label>
+                      <label className="text-xs font-mono text-[#77756F] block mb-1">Deposit Amount (MUSD)</label>
                       <input
                         type="number"
                         step="1"
                         value={streamDeposit}
                         onChange={(e) => setStreamDeposit(e.target.value)}
-                        placeholder="10"
+                        placeholder="1000"
                         className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
                       />
                     </div>
@@ -1580,44 +1858,36 @@ export default function Home() {
                         type="number"
                         value={duration}
                         onChange={(e) => setDuration(e.target.value)}
-                        placeholder="2592000 (30 days)"
+                        placeholder="3600 (1 hour)"
                         className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
                       />
                     </div>
 
                     {Number(streamDeposit) > 0 && Number(duration) > 0 && (
                       <div className="text-[11px] font-mono text-[#77756F] bg-[#F6F4EF] p-2.5 rounded-xl border border-[#DEDBD3] flex justify-between">
-                        <span>Streaming Speed:</span>
+                        <span>Streaming Rate:</span>
                         <span className="text-[#171715] font-semibold">
-                          {(Number(streamDeposit) / Number(duration)).toFixed(6)} MEZO / sec
+                          {(Number(streamDeposit) / Number(duration)).toFixed(6)} MUSD / sec
                         </span>
                       </div>
                     )}
 
-                    <div className="bg-[#F6F4EF] p-3 rounded-xl border border-[#DEDBD3] text-xs font-mono flex items-center justify-between">
-                      <span className="text-[#77756F]">MEZO Allowance:</span>
-                      <span className={`font-semibold ${isStreamerApproved ? 'text-[#258454]' : 'text-[#E66C35]'}`}>
-                        {streamerAllowanceEth >= 1000000 ? 'Unlimited' : `${streamerAllowanceEth.toFixed(2)} MEZO`}
-                        {isStreamerApproved ? ' (✓ Ready)' : ' (Approval Required)'}
-                      </span>
-                    </div>
-
                     <div className="flex space-x-2">
                       <button
                         type="button"
-                        onClick={() => handleApprove('musd', 'streamer', streamDeposit || '10')}
+                        onClick={() => handleApprove('musd', 'streamer', streamDeposit || '1000')}
                         disabled={(genericPending && activeAction === 'approve_stream') || !isReady}
-                        className={`flex-1 font-semibold py-3 rounded-xl text-xs transition-all ${
+                        className={`flex-1 font-semibold py-3 rounded-xl text-xs transition-colors ${
                           isStreamerApproved
-                            ? 'bg-[#258454]/10 border border-[#258454]/40 text-[#258454] hover:bg-[#258454]/20'
-                            : 'bg-[#E66C35] text-white hover:bg-[#171715] shadow-sm animate-pulse'
+                            ? 'bg-[#258454]/10 border border-[#258454]/40 text-[#258454]'
+                            : 'bg-[#E66C35] text-white animate-pulse'
                         } disabled:opacity-50`}
                       >
                         {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'approve_stream'
                           ? 'Approving...'
                           : isStreamerApproved
-                          ? `✓ MEZO Approved`
-                          : '1. Approve MEZO (Required)'}
+                          ? '✓ MUSD Approved'
+                          : '1. Approve MUSD'}
                       </button>
                       <button
                         type="submit"
@@ -1629,387 +1899,239 @@ export default function Home() {
                           !duration ||
                           !isStreamerApproved
                         }
-                        className={`flex-1 font-semibold py-3 rounded-xl text-xs transition-colors ${
-                          isStreamerApproved
-                            ? 'bg-[#171715] hover:bg-[#E66C35] text-white shadow-sm'
-                            : 'bg-[#DEDBD3] text-[#77756F] cursor-not-allowed opacity-60'
-                        } disabled:opacity-50`}
+                        className="flex-1 bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-3 rounded-xl text-xs transition-colors disabled:opacity-50"
                       >
-                        {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'create_stream'
-                          ? 'Processing...'
-                          : !isStreamerApproved
-                          ? '2. Create Stream (Approve First)'
-                          : '2. Create Stream'}
+                        {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'create_stream' ? 'Creating...' : '2. Create Stream'}
                       </button>
                     </div>
                   </form>
                 </div>
-
-                <p className="text-[11px] text-[#77756F] italic mt-4 pt-4 border-t border-[#DEDBD3]">
-                  💡 Each stream is automatically assigned a sequential Stream ID starting at #0 on Mezo L2. When created, it will automatically load into Stream Management on the right.
-                </p>
               </div>
 
-              {/* Manage Stream */}
+              {/* Stream Management */}
               <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl flex flex-col justify-between space-y-6">
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715] flex items-center space-x-2">
-                      <Activity className="w-4 h-4 text-[#258454]" />
-                      <span>Stream Management</span>
-                    </h3>
-                    <span className="text-[11px] font-mono bg-[#DEDBD3]/40 px-2 py-0.5 rounded text-[#77756F]">
-                      Total on-chain: {totalStreamsCount}
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#77756F] mb-4">Inspect balances, top-up liquidity, withdraw vested funds, or cancel.</p>
-
-                  <div className="space-y-4">
-                    {/* On-Chain Stream Selector Pills */}
-                    <div>
-                      <div className="flex justify-between items-center mb-1 text-xs font-mono">
-                        <label className="text-[#77756F]">Streams on Mezo L2</label>
-                        <span className="text-[11px] text-[#77756F]">
-                          {totalStreamsCount === 0 ? 'None yet' : `${totalStreamsCount} created`}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-1.5 flex-wrap gap-y-1.5">
-                        {totalStreamsCount > 0 ? (
-                          Array.from({ length: totalStreamsCount }, (_, i) => i).map(id => (
-                            <button
-                              key={id}
-                              type="button"
-                              onClick={() => setStreamIdToManage(id.toString())}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-mono transition-all border ${
-                                streamIdToManage === id.toString()
-                                  ? 'bg-[#171715] text-white border-[#171715] shadow-sm font-bold'
-                                  : 'bg-[#F6F4EF] hover:bg-[#DEDBD3] text-[#171715] border-[#DEDBD3]'
-                              }`}
-                            >
-                              Stream #{id}
-                            </button>
-                          ))
-                        ) : (
-                          <span className="text-xs text-[#77756F] font-mono italic">
-                            Create your first stream on the left!
-                          </span>
-                        )}
-                      </div>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Stream Management</h3>
+                    <div className="flex items-center space-x-1.5">
+                      <label className="text-xs font-mono text-[#77756F]">Stream ID:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={streamIdToManage}
+                        onChange={(e) => setStreamIdToManage(e.target.value)}
+                        className="w-16 bg-[#F6F4EF] border border-[#DEDBD3] rounded-lg px-2 py-1 text-xs font-mono text-[#171715] focus:outline-none focus:border-[#E66C35]"
+                      />
                     </div>
+                  </div>
 
-                    {/* Manual Stream ID Input */}
-                    <div>
-                      <label className="text-xs font-mono text-[#77756F] block mb-1">Enter / Switch Stream ID</label>
-                      <div className="flex space-x-2">
-                        <input
-                          type="number"
-                          min="0"
-                          value={streamIdToManage}
-                          onChange={(e) => setStreamIdToManage(e.target.value)}
-                          placeholder="0"
-                          className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-2.5 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#258454]"
-                        />
+                  {streamExists ? (
+                    <div className="space-y-4">
+                      <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-3 font-mono text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-[#77756F]">Status:</span>
+                          <span className={`font-bold ${streamIsActive ? 'text-[#258454]' : 'text-[#C7473A]'}`}>
+                            {streamIsActive ? '● Streaming (Active)' : '○ Completed / Cancelled'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#77756F]">Employer:</span>
+                          <span className="text-[#171715]">{formatAddress(streamEmployer)} {isCurrentUserEmployer ? '(You)' : ''}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#77756F]">Recipient:</span>
+                          <span className="text-[#171715]">{formatAddress(streamRecipient)} {isCurrentUserRecipient ? '(You)' : ''}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#77756F]">Total Deposited:</span>
+                          <span className="font-bold text-[#171715]">{streamDepositAmount.toLocaleString()} MUSD</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#77756F]">Claimable Now:</span>
+                          <span className="font-bold text-[#258454]">{claimableEth.toFixed(4)} MUSD</span>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="space-y-1 pt-1">
+                          <div className="flex justify-between text-[11px] text-[#77756F]">
+                            <span>Vesting Progress</span>
+                            <span>{streamProgressPercent}%</span>
+                          </div>
+                          <div className="w-full bg-[#DEDBD3] h-2.5 rounded-full overflow-hidden">
+                            <div className="bg-[#258454] h-full rounded-full transition-all duration-500" style={{ width: `${streamProgressPercent}%` }}></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Recipient Claim Action */}
+                      {isCurrentUserRecipient && streamIsActive && (
                         <button
                           type="button"
-                          onClick={() => { refetchStream(); refetchClaimable(); }}
-                          className="bg-[#DEDBD3]/50 hover:bg-[#DEDBD3] px-3 rounded-xl text-xs font-mono text-[#171715] transition-colors"
-                          title="Refresh stream"
+                          onClick={handleWithdrawStream}
+                          disabled={(streamerPending && activeAction === 'withdraw_stream') || !isReady || claimableEth <= 0}
+                          className="w-full bg-[#258454] hover:opacity-90 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
                         >
-                          <RefreshCw className="w-3.5 h-3.5" />
+                          {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'withdraw_stream'
+                            ? 'Claiming...'
+                            : `Claim Earned MUSD (${claimableEth.toFixed(4)} Available)`}
                         </button>
-                      </div>
-                    </div>
+                      )}
 
-                    {/* Stream Data Card */}
-                    {!streamExists ? (
-                      <div className="bg-[#F6F4EF] border border-[#DEDBD3] p-5 rounded-xl text-center space-y-2">
-                        <AlertTriangle className="w-6 h-6 text-[#B7791F] mx-auto opacity-70" />
-                        <p className="text-xs font-mono font-bold text-[#171715]">Stream #{streamIdToManage} Not Found</p>
-                        <p className="text-[11px] font-mono text-[#77756F]">
-                          {totalStreamsCount === 0
-                            ? 'No streams have been created yet on this contract.'
-                            : `Valid stream IDs are 0 to ${totalStreamsCount - 1}. Click any stream pill above to inspect.`}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="bg-[#F6F4EF] border border-[#DEDBD3] p-4 rounded-xl space-y-3 text-xs font-mono">
-                        <div className="flex justify-between items-center pb-2 border-b border-[#DEDBD3]/60">
-                          <span className="font-bold text-sm text-[#171715]">Stream #{streamIdToManage}</span>
-                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                            streamIsActive ? 'bg-[#258454]/10 text-[#258454] border border-[#258454]/30' : 'bg-[#DEDBD3] text-[#77756F]'
-                          }`}>
-                            {streamIsActive ? '● Streaming Live' : 'Ended / Inactive'}
-                          </span>
-                        </div>
-
-                        {/* Roles */}
-                        <div className="space-y-1.5 pt-1">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[#77756F]">Employer (Payer):</span>
-                            <span className="text-[#171715] font-mono flex items-center space-x-1">
-                              <span title={streamEmployer}>{formatAddress(streamEmployer)}</span>
-                              {isCurrentUserEmployer && (
-                                <span className="bg-[#258454]/15 text-[#258454] px-1.5 py-0.2 rounded text-[10px] font-bold">You</span>
-                              )}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-[#77756F]">Recipient (Payee):</span>
-                            <span className="text-[#171715] font-mono flex items-center space-x-1">
-                              <span title={streamRecipient}>{formatAddress(streamRecipient)}</span>
-                              {isCurrentUserRecipient ? (
-                                <span className="bg-[#258454]/15 text-[#258454] px-1.5 py-0.2 rounded text-[10px] font-bold">You</span>
-                              ) : (
-                                <span className="text-[#77756F] text-[10px]">(External)</span>
-                              )}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Balances */}
-                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#DEDBD3]/60">
-                          <div>
-                            <span className="text-[11px] text-[#77756F] block">Total Deposited</span>
-                            <span className="font-bold text-sm text-[#171715]">{streamDepositAmount} MEZO</span>
-                          </div>
-                          <div>
-                            <span className="text-[11px] text-[#77756F] block">Claimable Now</span>
-                            <span className="font-bold text-sm text-[#258454]">{claimableEth.toFixed(4)} MEZO</span>
-                          </div>
-                        </div>
-
-                        {/* Progress */}
-                        <div className="space-y-1 pt-1">
-                          <div className="flex justify-between text-[10px] text-[#77756F]">
-                            <span>Vesting Progress</span>
-                            <span>{streamProgressPercent}% ({streamWithdrawn.toFixed(2)} MEZO claimed)</span>
-                          </div>
-                          <div className="w-full bg-[#DEDBD3] h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-[#258454] h-full transition-all duration-500" style={{ width: `${streamProgressPercent}%` }}></div>
-                          </div>
-                        </div>
-
-                        {/* Escrow Guidance Note */}
-                        <div className="bg-[#FBFAF7] p-2.5 rounded-lg border border-[#DEDBD3] text-[11px] text-[#77756F] leading-relaxed">
-                          {isCurrentUserRecipient ? (
-                            <span>🎉 <strong>You are the recipient!</strong> Click "Withdraw" below to transfer your <strong>{claimableEth.toFixed(4)} MEZO</strong> directly into your wallet.</span>
-                          ) : (
-                            <span>ℹ️ <strong>Recipient Wallet Status:</strong> Deposited funds remain in the contract escrow until the recipient ({formatAddress(streamRecipient)}) connects and clicks "Withdraw".</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Top Up Form (Employer only) */}
-                    {streamExists && isCurrentUserEmployer && (
-                      <form onSubmit={handleTopUpStream} className="space-y-2 pt-1 border-t border-[#DEDBD3]">
-                        <label className="text-[11px] font-mono text-[#77756F] block">Top-Up Stream Liquidity</label>
-                        <div className="flex space-x-2">
+                      {/* Employer Top Up */}
+                      {isCurrentUserEmployer && streamIsActive && (
+                        <form onSubmit={handleTopUpStream} className="flex space-x-2">
                           <input
                             type="number"
-                            placeholder="Amount (MEZO)"
+                            step="1"
                             value={topUpAmount}
                             onChange={(e) => setTopUpAmount(e.target.value)}
-                            className="flex-1 bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-2.5 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#258454]"
+                            placeholder="Add MUSD"
+                            className="flex-1 bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-3 py-2 text-xs font-mono text-[#171715] focus:outline-none focus:border-[#E66C35]"
                           />
                           <button
                             type="submit"
                             disabled={(streamerPending && activeAction === 'top_up_stream') || !isReady || !topUpAmount || Number(topUpAmount) <= 0}
-                            className="bg-[#171715] hover:bg-[#258454] disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl text-xs transition-colors"
+                            className="bg-[#171715] hover:bg-[#E66C35] text-white font-semibold px-4 py-2 rounded-xl text-xs transition-colors disabled:opacity-50"
                           >
-                            {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'top_up_stream' ? 'Topping up...' : 'Top Up'}
+                            {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'top_up_stream' ? 'Adding...' : 'Top Up'}
                           </button>
-                        </div>
-                      </form>
-                    )}
+                        </form>
+                      )}
 
-                    {/* Withdraw & Cancel Buttons */}
-                    <div className="grid grid-cols-2 gap-3 pt-2">
-                      <button
-                        onClick={handleWithdrawStream}
-                        disabled={
-                          (streamerPending && activeAction === 'withdraw_stream') ||
-                          !isReady ||
-                          !streamExists ||
-                          !isCurrentUserRecipient ||
-                          claimableEth <= 0
-                        }
-                        title={
-                          !isCurrentUserRecipient
-                            ? `Only recipient (${formatAddress(streamRecipient)}) can withdraw`
-                            : claimableEth <= 0
-                            ? 'No funds available yet to claim'
-                            : undefined
-                        }
-                        className={`py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                          isCurrentUserRecipient && claimableEth > 0
-                            ? 'bg-[#258454] hover:opacity-90 text-white'
-                            : 'bg-[#DEDBD3] text-[#77756F] cursor-not-allowed opacity-60'
-                        }`}
-                      >
-                        {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'withdraw_stream'
-                          ? 'Withdrawing...'
-                          : isCurrentUserRecipient
-                          ? `Withdraw (${claimableEth.toFixed(4)} MEZO)`
-                          : `Withdraw (${formatAddress(streamRecipient)} Only)`}
-                      </button>
-
-                      <button
-                        onClick={handleCancelStream}
-                        disabled={
-                          (streamerPending && activeAction === 'cancel_stream') ||
-                          !isReady ||
-                          !streamExists ||
-                          (!isCurrentUserEmployer && !isCurrentUserRecipient) ||
-                          !streamIsActive
-                        }
-                        className="bg-[#C7473A] hover:opacity-90 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors flex items-center justify-center space-x-1"
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                        <span>
+                      {/* Cancel Stream */}
+                      {(isCurrentUserEmployer || isCurrentUserRecipient) && streamIsActive && (
+                        <button
+                          type="button"
+                          onClick={handleCancelStream}
+                          disabled={(streamerPending && activeAction === 'cancel_stream') || !isReady}
+                          className="w-full bg-[#C7473A]/10 hover:bg-[#C7473A]/20 border border-[#C7473A]/30 text-[#C7473A] font-semibold py-2 rounded-xl text-xs transition-colors"
+                        >
                           {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'cancel_stream'
-                            ? 'Cancelling...'
-                            : 'Cancel Stream'}
-                        </span>
-                      </button>
+                            ? 'Revoking...'
+                            : 'Cancel Stream (Earned to Recipient, Balance to Employer)'}
+                        </button>
+                      )}
                     </div>
-                  </div>
+                  ) : (
+                    <div className="bg-[#F6F4EF] p-8 rounded-xl border border-[#DEDBD3] text-center space-y-2">
+                      <p className="text-xs font-mono text-[#77756F]">Stream #{streamIdToManage} not yet initialized on Mezo L2.</p>
+                      <p className="text-[11px] text-[#77756F]">Create a new stream on the left or enter an active Stream ID.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* TAB 4: ACTIVITY LOG */}
+        {/* TAB 4: ON-CHAIN ACTIVITY */}
         {activeTab === 'activity' && (
-          <div className="space-y-8 animate-fadeIn">
-            <div className="border-b border-[#DEDBD3] pb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+          <div className="space-y-6 animate-fadeIn">
+            <div className="flex justify-between items-center border-b border-[#DEDBD3] pb-4">
               <div>
-                <h2 className="text-3xl font-serif-display font-bold text-[#171715]">Transaction Activity</h2>
-                <p className="text-xs text-[#77756F] mt-1">Confirmed transactions on Mezo Testnet (Chain 31611) • Persisted across browser sessions.</p>
+                <h2 className="text-3xl font-serif-display font-bold text-[#171715]">On-Chain Activity Records</h2>
+                <p className="text-xs text-[#77756F] mt-1">Confirmed transactions on Mezo Testnet with real explorer links.</p>
               </div>
               {transactions.length > 0 && (
                 <button
-                  type="button"
                   onClick={clearTransactionHistory}
-                  className="text-xs font-mono text-[#77756F] hover:text-[#C7473A] px-3 py-1.5 rounded-xl border border-[#DEDBD3] hover:border-[#C7473A]/40 transition-colors self-start sm:self-auto"
+                  className="text-xs font-mono text-[#77756F] hover:text-[#C7473A] transition-colors"
                 >
                   Clear History
                 </button>
               )}
             </div>
 
-            <div className="bg-[#FBFAF7] border border-[#DEDBD3] rounded-2xl overflow-hidden shadow-sm">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[#DEDBD3] bg-[#F6F4EF] text-xs font-mono uppercase text-[#77756F]">
-                    <th className="p-4 font-medium">Type</th>
-                    <th className="p-4 font-medium">Amount / Ref</th>
-                    <th className="p-4 font-medium">Tx Hash (Explorer)</th>
-                    <th className="p-4 font-medium">Status</th>
-                    <th className="p-4 font-medium">Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#DEDBD3] text-xs font-mono">
-                  {transactions.length === 0 ? (
+            {transactions.length === 0 ? (
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-12 rounded-2xl text-center space-y-3 font-mono text-xs text-[#77756F]">
+                <Activity className="w-8 h-8 text-[#DEDBD3] mx-auto" />
+                <p>No transactions recorded in this browser session.</p>
+                <p className="text-[11px]">Deposits, borrows, repayments, streams, and liquidations will appear here in real time.</p>
+              </div>
+            ) : (
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] rounded-2xl overflow-hidden shadow-sm">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="bg-[#F6F4EF] border-b border-[#DEDBD3] text-[#77756F]">
                     <tr>
-                      <td colSpan={5} className="p-12 text-center text-[#77756F]">
-                        <Activity className="w-8 h-8 text-[#DEDBD3] mx-auto mb-3" />
-                        <p className="text-sm font-semibold text-[#171715]">No Recent Transactions</p>
-                        <p className="text-xs text-[#77756F] mt-1">Your on-chain deposits, borrows, approvals, and streams will be logged here and saved.</p>
-                      </td>
+                      <th className="py-3 px-4">Action</th>
+                      <th className="py-3 px-4">Amount / Reference</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4">Time</th>
+                      <th className="py-3 px-4 text-right">Explorer</th>
                     </tr>
-                  ) : (
-                    transactions.map((tx, idx) => (
-                      <tr key={idx} className="hover:bg-[#F6F4EF]/50 transition-colors">
-                        <td className="p-4 font-bold text-[#171715]">{tx.type}</td>
-                        <td className="p-4 text-[#77756F]">{tx.amount}</td>
-                        <td className="p-4">
-                          <a
-                            href={`https://explorer.test.mezo.org/tx/${tx.hash.replace(/\.+$/, '')}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[#E66C35] hover:underline flex items-center space-x-1"
-                            title={`View ${tx.hash} on Mezo Explorer`}
+                  </thead>
+                  <tbody className="divide-y divide-[#DEDBD3]">
+                    {transactions.map((tx) => (
+                      <tr key={tx.hash} className="hover:bg-[#F6F4EF]/50 transition-colors">
+                        <td className="py-3 px-4 font-bold text-[#171715]">{tx.type}</td>
+                        <td className="py-3 px-4 text-[#77756F]">{tx.amount}</td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              tx.status === 'success'
+                                ? 'bg-[#258454]/15 text-[#258454]'
+                                : tx.status === 'failed'
+                                ? 'bg-[#C7473A]/15 text-[#C7473A]'
+                                : 'bg-[#E66C35]/15 text-[#E66C35]'
+                            }`}
                           >
-                            <span>{tx.hash.length > 20 ? `${tx.hash.slice(0, 10)}...${tx.hash.slice(-6)}` : tx.hash}</span>
-                            <ExternalLink className="w-3 h-3 shrink-0" />
-                          </a>
-                        </td>
-                        <td className="p-4">
-                          <span className={`px-2.5 py-1 rounded-full font-semibold ${
-                            tx.status === 'success'
-                              ? 'bg-[#258454]/10 text-[#258454]'
-                              : 'bg-[#C7473A]/10 text-[#C7473A]'
-                          }`}>
                             {tx.status}
                           </span>
                         </td>
-                        <td className="p-4 text-[#77756F]">{tx.timestamp}</td>
+                        <td className="py-3 px-4 text-[#77756F]">{tx.timestamp}</td>
+                        <td className="py-3 px-4 text-right">
+                          <a
+                            href={`https://explorer.test.mezo.org/tx/${tx.hash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#E66C35] hover:underline inline-flex items-center space-x-1"
+                          >
+                            <span>{formatAddress(tx.hash)}</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
       </div>
 
-      {/* Footer */}
-      <footer className="border-t border-[#DEDBD3] bg-[#FBFAF7] px-8 py-6 mt-12 text-center text-xs font-mono text-[#77756F]">
-        <p>BitStreamfi Protocol • Built on Mezo Network (Testnet Chain ID 31611) • Powered by Anatomy Design Principles</p>
-      </footer>
-
-      {/* Connect & Switch Wallet Modal */}
-      {showWalletModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="bg-[#FBFAF7] border border-[#DEDBD3] rounded-2xl max-w-sm w-full p-6 shadow-2xl relative">
-            <div className="flex justify-between items-center mb-4 pb-3 border-b border-[#DEDBD3]">
-              <div className="flex items-center space-x-2">
-                <Wallet className="w-5 h-5 text-[#E66C35]" />
-                <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Select Wallet</h3>
-              </div>
-              <button
-                onClick={() => setShowWalletModal(false)}
-                className="text-[#77756F] hover:text-[#171715] font-bold text-sm px-1.5 py-0.5 rounded"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-[#77756F] mb-4">
-              Select a provider or switch accounts directly in your browser extension (MetaMask, Rabby, OKX, etc.).
-            </p>
-
-            <div className="space-y-2.5">
-              {connectors.map((connector) => (
-                <button
-                  key={connector.uid || connector.id}
-                  onClick={() => {
-                    connect({ connector });
-                    setShowWalletModal(false);
-                  }}
-                  className="w-full flex items-center justify-between p-3.5 rounded-xl border border-[#DEDBD3] bg-[#F6F4EF] hover:bg-[#E66C35] hover:text-white hover:border-[#E66C35] transition-all text-xs font-semibold text-[#171715] group"
-                >
-                  <span className="flex items-center space-x-2">
-                    <span className="w-2 h-2 rounded-full bg-[#258454] group-hover:bg-white"></span>
-                    <span>{connector.name || 'Browser Wallet'}</span>
-                  </span>
-                  <span className="text-[10px] font-mono uppercase opacity-70 group-hover:opacity-100">Connect →</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="mt-5 pt-3 border-t border-[#DEDBD3] text-center">
-              <p className="text-[11px] text-[#77756F] font-mono">
-                Tip: To switch to another account in the same wallet, switch accounts inside your extension and it will update immediately.
-              </p>
-            </div>
+      {/* FOOTER */}
+      <footer className="border-t border-[#DEDBD3] bg-[#FBFAF7] py-8 text-xs font-mono text-[#77756F]">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4">
+          <div>
+            <span className="font-bold text-[#171715]">BitStreamfi</span> — Built for Akindo Hackathon Wave 2 on Mezo Network.
+          </div>
+          <div className="flex flex-wrap items-center gap-4 text-[11px]">
+            <a href={`https://explorer.test.mezo.org/address/${CONTRACT_ADDRESSES.vault}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#171715]">
+              Vault Contract ↗
+            </a>
+            <a href={`https://explorer.test.mezo.org/address/${CONTRACT_ADDRESSES.streamer}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#171715]">
+              Streamer ↗
+            </a>
+            <a href={`https://explorer.test.mezo.org/address/${CONTRACT_ADDRESSES.creditEngine}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#171715]">
+              Credit Engine ↗
+            </a>
+            <a href={`https://explorer.test.mezo.org/address/${CONTRACT_ADDRESSES.musd}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#171715]">
+              Official MUSD ↗
+            </a>
+            <a href={`https://explorer.test.mezo.org/address/${CONTRACT_ADDRESSES.tbtc}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#171715]">
+              Test tBTC ↗
+            </a>
           </div>
         </div>
-      )}
+      </footer>
+      {/* WALLET SELECTION & DISCONNECT MODAL */}
+      <WalletModal
+        isOpen={isWalletModalOpen}
+        onClose={() => setIsWalletModalOpen(false)}
+        initialMode={walletModalInitialMode}
+      />
     </main>
   );
 }

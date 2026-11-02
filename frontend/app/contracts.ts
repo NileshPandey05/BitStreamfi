@@ -1,11 +1,14 @@
 export const MEZO_TESTNET_CHAIN_ID = 31611;
 
 export const CONTRACT_ADDRESSES = {
-  vault: "0xA37a94cf5675fB41FB1911C57Be064B035630354" as const,
-  streamer: "0x286bEbCAEb98439eE30e919a078e271a3541C6B1" as const,
-  creditEngine: "0x932A00C55055E1b89D30a298891D6aB67b24911F" as const,
-  tbtc: "0xc2a912D17e0DfAe27e17ef0cF3baF5beC659A6EA" as const, // Real/Original tBTC
-  musd: "0x7B7c000000000000000000000000000000000001" as const, // Official MEZO Testnet Token (MUSD)
+  vault: "0x9b7623CD6287722C8B91dBd2Ea67AC3f09809c85" as const,
+  streamer: "0xfF1900d91E76beB66a9163b42cae1c2A0BeDbF00" as const,
+  creditEngine: "0x53644ed38383058DE2aCf88a4b37AFC34837800E" as const,
+  tbtc: "0xd82C1e865efD488Fd0C9AA3276D236Eae3fD77Ae" as const, // Real verified test tBTC with public faucet
+  musd: "0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503" as const, // Official Mezo Testnet MUSD stablecoin
+  mezo: "0x7B7c000000000000000000000000000000000001" as const, // Official MEZO Governance Token
+  priceFeed: "0x86bCF0841622a5dAC14A313a15f96A95421b9366" as const, // Official Mezo Live PriceFeed Oracle
+  borrowerOperations: "0xCdF7028ceAB81fA0C6971208e83fa7872994beE5" as const, // Official Mezo BorrowerOperations
 };
 
 export const ERC20_ABI = [
@@ -50,6 +53,23 @@ export const ERC20_ABI = [
     outputs: [{ name: "", type: "string" }],
     stateMutability: "view",
   },
+  {
+    type: "function",
+    name: "faucet",
+    inputs: [],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "mint",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
 ] as const;
 
 export const VAULT_ABI = [
@@ -70,7 +90,10 @@ export const VAULT_ABI = [
   {
     type: "function",
     name: "withdrawCollateral",
-    inputs: [{ name: "amount", type: "uint256" }],
+    inputs: [
+      { name: "amount", type: "uint256" },
+      { name: "isNative", type: "bool" },
+    ],
     outputs: [],
     stateMutability: "nonpayable",
   },
@@ -90,7 +113,67 @@ export const VAULT_ABI = [
   },
   {
     type: "function",
+    name: "liquidate",
+    inputs: [
+      { name: "user", type: "address" },
+      { name: "debtToRepay", type: "uint256" },
+      { name: "seizeNative", type: "bool" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "isLiquidatable",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getHealthFactor",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getBTCPrice",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getCollateralValueUSD",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getMaxBorrow",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "collateralBalances",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "tbtcCollateralBalances",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "nativeCollateralBalances",
     inputs: [{ name: "", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
@@ -105,6 +188,13 @@ export const VAULT_ABI = [
   {
     type: "function",
     name: "MAX_LTV_BPS",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "LIQUIDATION_THRESHOLD_BPS",
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
@@ -129,6 +219,25 @@ export const VAULT_ABI = [
     inputs: [],
     outputs: [{ name: "", type: "address" }],
     stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getMezoTroveInfo",
+    inputs: [],
+    outputs: [
+      { name: "status", type: "uint256" },
+      { name: "debt", type: "uint256" },
+      { name: "coll", type: "uint256" },
+      { name: "icr", type: "uint256" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "openMezoTrove",
+    inputs: [{ name: "musdAmount", type: "uint256" }],
+    outputs: [],
+    stateMutability: "payable",
   },
 ] as const;
 
@@ -206,6 +315,13 @@ export const CREDIT_ENGINE_ABI = [
     inputs: [{ name: "", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "withdrawYield",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
   },
   {
     type: "function",

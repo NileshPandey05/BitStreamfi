@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WagmiProvider, createConfig, http } from 'wagmi';
 import { defineChain } from 'viem';
-import { injected } from 'wagmi/connectors';
+import { injected, safe } from 'wagmi/connectors';
 
 export const mezoTestnet = defineChain({
   id: 31611,
@@ -20,7 +20,24 @@ export const mezoTestnet = defineChain({
 
 export const wagmiConfig = createConfig({
   chains: [mezoTestnet],
-  connectors: [injected()],
+  multiInjectedProviderDiscovery: true,
+  connectors: [
+    injected({ target: 'metaMask' }),
+    injected({ target: 'coinbaseWallet' }),
+    injected({
+      target: {
+        id: 'rabby',
+        name: 'Rabby Wallet',
+        provider(window) {
+          if (typeof window === 'undefined') return undefined;
+          const win = window as unknown as { rabby?: unknown; ethereum?: { isRabby?: boolean } };
+          return (win.rabby || (win.ethereum?.isRabby ? win.ethereum : undefined)) as any;
+        },
+      },
+    }),
+    injected(),
+    safe(),
+  ],
   transports: {
     [mezoTestnet.id]: http('https://rpc.test.mezo.org'),
   },
