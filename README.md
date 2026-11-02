@@ -47,8 +47,9 @@ Instead of liquidating Bitcoin to pay salaries or finance operations, organizati
 - **Stream Discovery**: Built-in contract inspection allows users to instantly discover and select any stream ID on-chain.
 
 ### 3. 🔄 SelfRepayingCreditEngine (Autonomous Debt Amortization)
-- **Yield Redirection**: Staking yield generated on Mezo L2 is deposited into the credit engine.
-- **Automated Debt Reduction**: Calling `amortizeDebt(user, amount)` uses accrued yield to repay debt principal in `MezoFlowVault`, allowing borrowers to clear obligations without touching principal capital.
+- **Yield Redirection**: Yield and liquidity reserves can be deposited into the credit engine.
+- **Automated Debt Reduction**: Calling `amortizeDebt(user, amount)` uses deposited yield to repay debt principal in `MezoFlowVault`, allowing borrowers to clear obligations without touching principal capital.
+- **Reclaimable Yield**: Users can reclaim unamortized yield at any time via `withdrawYield(amount)`.
 
 ### 4. ⚡ Live Activity & Blockscout Verification
 - **Zero Premature Confirmation**: Form submissions poll genuine on-chain transaction receipts via `publicClient.waitForTransactionReceipt`.
@@ -63,15 +64,17 @@ All protocol smart contracts are deployed and verified on **Mezo Testnet**:
 
 | Contract Name | Deployed Address | Network / Explorer Link | Status |
 |:---|:---|:---|:---:|
-| **MezoFlowVault** | `0xA37a94cf5675fB41FB1911C57Be064B035630354` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0xA37a94cf5675fB41FB1911C57Be064B035630354) | **Active** 🟢 |
-| **PayrollStreamer** | `0x286bEbCAEb98439eE30e919a078e271a3541C6B1` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0x286bEbCAEb98439eE30e919a078e271a3541C6B1) | **Active** 🟢 |
-| **SelfRepayingCreditEngine** | `0x932A00C55055E1b89D30a298891D6aB67b24911F` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0x932A00C55055E1b89D30a298891D6aB67b24911F) | **Active** 🟢 |
-| **MEZO Token (MUSD)** | `0x7B7c000000000000000000000000000000000001` | [View on Mezo Explorer](https://explorer.test.mezo.org/token/0x7B7c000000000000000000000000000000000001) | **Native Asset** 🪙 |
-| **Test tBTC** | `0xc2a912D17e0DfAe27e17ef0cF3baF5beC659A6EA` | [View on Mezo Explorer](https://explorer.test.mezo.org/token/0xc2a912D17e0DfAe27e17ef0cF3baF5beC659A6EA) | **Collateral** ₿ |
+| **MezoFlowVault** | `0x9b7623CD6287722C8B91dBd2Ea67AC3f09809c85` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0x9b7623CD6287722C8B91dBd2Ea67AC3f09809c85) | **Active & Verified** 🟢 |
+| **PayrollStreamer** | `0xfF1900d91E76beB66a9163b42cae1c2A0BeDbF00` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0xfF1900d91E76beB66a9163b42cae1c2A0BeDbF00) | **Active & Verified** 🟢 |
+| **SelfRepayingCreditEngine** | `0x53644ed38383058DE2aCf88a4b37AFC34837800E` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0x53644ed38383058DE2aCf88a4b37AFC34837800E) | **Active & Verified** 🟢 |
+| **MUSD Stablecoin (Official Mezo)** | `0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503` | [View on Mezo Explorer](https://explorer.test.mezo.org/token/0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503) | **Official Stablecoin** 🪙 |
+| **Test tBTC (with Faucet)** | `0xd82C1e865efD488Fd0C9AA3276D236Eae3fD77Ae` | [View on Mezo Explorer](https://explorer.test.mezo.org/token/0xd82C1e865efD488Fd0C9AA3276D236Eae3fD77Ae) | **Collateral Token** ₿ |
+| **Mezo PriceFeed Oracle** | `0x86bCF0841622a5dAC14A313a15f96A95421b9366` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0x86bCF0841622a5dAC14A313a15f96A95421b9366) | **Live PriceFeed** 📊 |
+| **Mezo BorrowerOperations** | `0xCdF7028ceAB81fA0C6971208e83fa7872994beE5` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0xCdF7028ceAB81fA0C6971208e83fa7872994beE5) | **Trove Core** ⚙️ |
 
 ---
 
-## 🏗️ Protocol Architecture
+## 🏗️ Protocol Architecture (Wave 2 Composable)
 
 ```
    ┌─────────────────────────────────────────────────────────────┐
@@ -86,26 +89,35 @@ All protocol smart contracts are deployed and verified on **Mezo Testnet**:
  └─────┬─────┘             └──────┬──────┘             └─────▲─────┘
        │                          │                          │
        │ 1. Deposit Collateral    │                          │
+       │    (Native / tBTC)       │                          │
        ▼                          │                          │
  ┌──────────────────────┐         │                          │
- │    MezoFlowVault     │         │                          │
- │ (0xA37a...0354)      │         │                          │
+ │    MezoFlowVault     │◄────────┤ Mezo PriceFeed Oracle    │
+ │ (0x9b76...9c85)      │         │ ($78k+ Live Price)       │
+ └──────────┬───────────┘         │                          │
+            │                     │                          │
+            │ Opens/Adjusts Trove │                          │
+            ▼                     │                          │
+ ┌──────────────────────┐         │                          │
+ │  BorrowerOperations  │         │                          │
+ │  (MUSD Mint/Borrow)  │         │                          │
  └──────────┬───────────┘         │                          │
             │                     │                          │
             │ 2. Borrow MUSD      │                          │
             ▼                     │                          │
  ┌──────────────────────┐         │                          │
  │   PayrollStreamer    │─────────┼──────────────────────────┘
- │ (0x286b...C6B1)      │         │  3. Real-Time Stream (sec by sec)
+ │ (0xfF19...bF00)      │         │  3. Real-Time MUSD Stream (sec by sec)
  └──────────────────────┘         │
             ▲                     │
-            │ 4. Staking Yield    ▼
+            │ 4. Yield Deposits   ▼
  ┌──────────┴───────────┐  ┌─────────────┐
- │ SelfRepayingCredit   │◄─┤ Proof-of-   │
- │ Engine               │  │ HODL Yield  │
- │ (0x932A...911F)      │  └─────────────┘
+ │ SelfRepayingCredit   │◄─┤ Yield /     │
+ │ Engine               │  │ Reserves    │
+ │ (0x5364...800E)      │  └─────────────┘
  └──────────────────────┘
    5. Amortizes Vault Debt
+      (Reclaimable via withdrawYield)
 ```
 
 ---
