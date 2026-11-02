@@ -12,31 +12,48 @@ contract DeployFullScript is Script {
         uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0));
         address deployer = deployerPrivateKey != 0 ? vm.addr(deployerPrivateKey) : msg.sender;
 
-        vm.startBroadcast(deployerPrivateKey);
+        if (deployerPrivateKey != 0) {
+            vm.startBroadcast(deployerPrivateKey);
+        } else {
+            vm.startBroadcast();
+        }
 
-        // 1. Deploy Test Tokens
+        // 1. Deploy Real Test tBTC Token (with public faucet and mint)
         TestToken tbtc = new TestToken("Test Bitcoin", "tBTC");
-        TestToken musd = new TestToken("Mezo USD", "MUSD");
 
-        // 2. Deploy Core Protocol Contracts
-        MezoFlowVault vault = new MezoFlowVault(address(tbtc), address(musd));
-        PayrollStreamer streamer = new PayrollStreamer(address(musd));
-        SelfRepayingCreditEngine creditEngine = new SelfRepayingCreditEngine(address(vault), address(musd));
+        // 2. Official Mezo Testnet Contract Addresses
+        address musd = vm.envOr("MUSD_ADDRESS", address(0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503));
+        address priceFeed = vm.envOr("PRICE_FEED_ADDRESS", address(0x86bCF0841622a5dAC14A313a15f96A95421b9366));
+        address borrowerOps = vm.envOr("BORROWER_OPS_ADDRESS", address(0xCdF7028ceAB81fA0C6971208e83fa7872994beE5));
+        address troveManager = vm.envOr("TROVE_MANAGER_ADDRESS", address(0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0));
+        address hintHelpers = vm.envOr("HINT_HELPERS_ADDRESS", address(0x4e4cBA3779d56386ED43631b4dCD6d8EacEcBCF6));
+        address sortedTroves = vm.envOr("SORTED_TROVES_ADDRESS", address(0x722E4D24FD6Ff8b0AC679450F3D91294607268fA));
 
-        // 3. Seed Vault with MUSD liquidity so borrowers can mint/borrow
-        musd.mint(address(vault), 1_000_000 * 10**18);
+        // 3. Deploy Core Protocol Contracts
+        MezoFlowVault vault = new MezoFlowVault(
+            address(tbtc),
+            musd,
+            priceFeed,
+            borrowerOps,
+            troveManager,
+            hintHelpers,
+            sortedTroves
+        );
+        PayrollStreamer streamer = new PayrollStreamer(musd);
+        SelfRepayingCreditEngine creditEngine = new SelfRepayingCreditEngine(address(vault), musd);
 
-        // 4. Seed Deployer Wallet with initial tBTC and MUSD
+        // 4. Seed Deployer Wallet with initial tBTC so users can test immediately
         tbtc.mint(deployer, 50 * 10**18); // 50 tBTC
-        musd.mint(deployer, 50_000 * 10**18); // 50,000 MUSD
 
-        console.log("=== DEPLOYMENT COMPLETED ===");
-        console.log("Test tBTC:", address(tbtc));
-        console.log("Test MUSD:", address(musd));
+        console.log("=== FULL PROTOCOL DEPLOYMENT COMPLETED ===");
+        console.log("Test tBTC Token:", address(tbtc));
+        console.log("MUSD Stablecoin:", musd);
+        console.log("PriceFeed:", priceFeed);
+        console.log("BorrowerOperations:", borrowerOps);
         console.log("MezoFlowVault:", address(vault));
         console.log("PayrollStreamer:", address(streamer));
         console.log("SelfRepayingCreditEngine:", address(creditEngine));
-        console.log("Minted to deployer:", deployer);
+        console.log("Minted 50 tBTC to deployer:", deployer);
 
         vm.stopBroadcast();
     }
