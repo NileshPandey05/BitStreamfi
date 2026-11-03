@@ -1,15 +1,15 @@
 export const MEZO_TESTNET_CHAIN_ID = 31611;
 
 export const CONTRACT_ADDRESSES = {
-  vault: "0x9b7623CD6287722C8B91dBd2Ea67AC3f09809c85" as const,
-  streamer: "0xfF1900d91E76beB66a9163b42cae1c2A0BeDbF00" as const,
-  creditEngine: "0x53644ed38383058DE2aCf88a4b37AFC34837800E" as const,
+  vault: "0x669dBAd6F813CDeCa14e1A46AB91c95017603f85" as const,
+  streamer: "0xC3C2c3113898b8FF4eeAedC992E6f34A6f7d9b0C" as const,
+  creditEngine: "0xE1e310cCd8b1295cBbE9CD76411EaF54879c0A6F" as const,
   tbtc: "0xd82C1e865efD488Fd0C9AA3276D236Eae3fD77Ae" as const, // Real verified test tBTC with public faucet
   musd: "0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503" as const, // Official Mezo Testnet MUSD stablecoin
   mezo: "0x7B7c000000000000000000000000000000000001" as const, // Official MEZO Governance Token
   priceFeed: "0x86bCF0841622a5dAC14A313a15f96A95421b9366" as const, // Official Mezo Live PriceFeed Oracle
   borrowerOperations: "0xCdF7028ceAB81fA0C6971208e83fa7872994beE5" as const, // Official Mezo BorrowerOperations
-  stakingBoost: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D" as const, // MEZO Staking Boost
+  stakingBoost: "0x92678d0A29a183e194c7496EF9f043b422746EDf" as const, // Real deployed MEZO Staking Boost
 };
 
 export const ERC20_ABI = [

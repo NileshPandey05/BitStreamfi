@@ -43,16 +43,16 @@ export default function Home() {
   // Task 4: Interactive Risk Simulator & Keeper Arena State
   const [simBtcShockPercent, setSimBtcShockPercent] = useState<number>(0);
   const [simUseCustom, setSimUseCustom] = useState<boolean>(true);
-  const [simCustomCollateral, setSimCustomCollateral] = useState<string>('1.25');
-  const [simCustomDebt, setSimCustomDebt] = useState<string>('48000');
-  const [simCustomEscrowBuffer, setSimCustomEscrowBuffer] = useState<string>('15000');
+  const [simCustomCollateral, setSimCustomCollateral] = useState<string>('0.05');
+  const [simCustomDebt, setSimCustomDebt] = useState<string>('1790');
+  const [simCustomEscrowBuffer, setSimCustomEscrowBuffer] = useState<string>('200');
   const [simHealedState, setSimHealedState] = useState<boolean>(false);
   const [simHealToast, setSimHealToast] = useState<string | null>(null);
   const [keeperLiquidatedIds, setKeeperLiquidatedIds] = useState<string[]>([]);
   const [keeperEarningsUSD, setKeeperEarningsUSD] = useState<number>(0);
   const [keeperCount, setKeeperCount] = useState<number>(0);
   const [keeperFilter, setKeeperFilter] = useState<'all' | 'liquidatable' | 'safe'>('all');
-  const [simTrovePreset, setSimTrovePreset] = useState<'enterprise' | 'miner' | 'treasury' | 'wallet'>('enterprise');
+  const [simTrovePreset, setSimTrovePreset] = useState<'borrower1' | 'vaultTrove' | 'wallet' | 'custom'>('borrower1');
 
   // Transaction history log state (persisted to localStorage)
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
@@ -534,28 +534,28 @@ export default function Home() {
   const isCreditEngineApproved = creditEngineAllowanceEth >= (Number(yieldDepositAmount) || 1);
   const isTbtcApproved = tbtcAllowanceEth >= (Number(collateralAmount) || 1);
 
-  // Simulator Preset Switcher
-  const applySimPreset = (preset: 'enterprise' | 'miner' | 'treasury' | 'wallet') => {
+  // Simulator Preset Switcher (Real Mezo Testnet Positions)
+  const applySimPreset = (preset: 'borrower1' | 'vaultTrove' | 'wallet' | 'custom') => {
     setSimTrovePreset(preset);
     setSimHealedState(false);
     setSimHealToast(null);
-    if (preset === 'enterprise') {
+    if (preset === 'borrower1') {
       setSimUseCustom(true);
-      setSimCustomCollateral('1.25');
-      setSimCustomDebt('48000');
-      setSimCustomEscrowBuffer('15000');
-    } else if (preset === 'miner') {
+      setSimCustomCollateral('0.05');
+      setSimCustomDebt('1790');
+      setSimCustomEscrowBuffer('200');
+    } else if (preset === 'vaultTrove') {
       setSimUseCustom(true);
-      setSimCustomCollateral('0.85');
-      setSimCustomDebt('52000');
-      setSimCustomEscrowBuffer('4000');
-    } else if (preset === 'treasury') {
-      setSimUseCustom(true);
-      setSimCustomCollateral('4.00');
-      setSimCustomDebt('110000');
-      setSimCustomEscrowBuffer('45000');
+      setSimCustomCollateral('0.05');
+      setSimCustomDebt('1800');
+      setSimCustomEscrowBuffer('0');
     } else if (preset === 'wallet') {
       setSimUseCustom(false);
+    } else if (preset === 'custom') {
+      setSimUseCustom(true);
+      setSimCustomCollateral('0.10');
+      setSimCustomDebt('3500');
+      setSimCustomEscrowBuffer('500');
     }
   };
 
@@ -564,15 +564,15 @@ export default function Home() {
 
   const activeSimCollateral = !simUseCustom && collateralEth > 0 
     ? collateralEth 
-    : (Number(simCustomCollateral) || 1.25);
+    : (Number(simCustomCollateral) || 0.05);
 
   const initialSimDebt = !simUseCustom && debtEth > 0 
     ? debtEth 
-    : (Number(simCustomDebt) || 48000);
+    : (Number(simCustomDebt) || 1790);
 
   const activeSimEscrow = !simUseCustom && unvestedBufferEth > 0 
     ? unvestedBufferEth 
-    : (Number(simCustomEscrowBuffer) || 15000);
+    : (Number(simCustomEscrowBuffer) || 200);
 
   const targetHealIcr = 1.6; // 160% Recovery Target ICR
   const simCollateralUSD = activeSimCollateral * simBtcPrice;
@@ -612,36 +612,27 @@ export default function Home() {
     collateralBtc: number;
     debtMusd: number;
     escrowBuffer: number;
-    isSimulated: boolean;
+    isNative: boolean;
   }
 
   const arenaTroves: ArenaTrove[] = [
     {
-      id: 'trove-ent-1',
-      name: 'Enterprise Payroll Alpha',
-      borrower: '0x71C839169B0182C0E4B31478192837482811aB19',
-      collateralBtc: 2.50,
-      debtMusd: 95000,
-      escrowBuffer: 25000,
-      isSimulated: true,
+      id: 'trove-borrower-1',
+      name: 'Mezo Testnet Borrower #1',
+      borrower: '0xeb4aFbA3ad5ac4a55aDca21818cFF8FCB8f89fDd',
+      collateralBtc: 0.05,
+      debtMusd: 1790,
+      escrowBuffer: 200,
+      isNative: false,
     },
     {
-      id: 'trove-miner-2',
-      name: 'High-Leverage Mining Rig',
-      borrower: '0x39E428F991C2834B7688202A0B7C687E987448Fe',
-      collateralBtc: 0.85,
-      debtMusd: 54000,
-      escrowBuffer: 3000,
-      isSimulated: true,
-    },
-    {
-      id: 'trove-dao-3',
-      name: 'DAO Treasury Escrow Vault',
-      borrower: '0x89A197410C5D766129846200A5129671182222Cc',
-      collateralBtc: 4.10,
-      debtMusd: 110000,
-      escrowBuffer: 40000,
-      isSimulated: true,
+      id: 'trove-mezo-protocol',
+      name: 'MezoFlow Composed Trove',
+      borrower: '0x669dBAd6F813CDeCa14e1A46AB91c95017603f85',
+      collateralBtc: 0.05,
+      debtMusd: 1800,
+      escrowBuffer: 0,
+      isNative: true,
     },
     ...(isConnected && debtEth > 0 ? [{
       id: 'trove-wallet',
@@ -650,22 +641,44 @@ export default function Home() {
       collateralBtc: collateralEth,
       debtMusd: debtEth,
       escrowBuffer: unvestedBufferEth,
-      isSimulated: false,
+      isNative: nativeCollateralEth > 0,
     }] : []),
   ];
 
-  const handleExecuteKeeperLiquidation = (trove: ArenaTrove) => {
+  const handleExecuteKeeperLiquidation = async (trove: ArenaTrove) => {
+    if (!address) {
+      setStatusMessage('Please connect your wallet to execute keeper liquidations on Mezo Testnet.');
+      setTxStatus('failed');
+      return;
+    }
     if (keeperLiquidatedIds.includes(trove.id)) return;
-    const profitUsd = trove.debtMusd * (effectiveKeeperBonusPercent / 100);
-    setKeeperLiquidatedIds((prev) => [...prev, trove.id]);
-    setKeeperEarningsUSD((prev) => prev + profitUsd);
-    setKeeperCount((prev) => prev + 1);
-    addTransactionRecord({
-      hash: `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`,
-      type: `Keeper Liquidation (${trove.name})`,
-      amount: `+${profitUsd.toFixed(2)} MUSD (${effectiveKeeperBonusPercent.toFixed(1)}% Bounty)`,
-      status: 'success',
-      timestamp: new Date().toLocaleTimeString(),
+
+    await executeTx({
+      actionType: 'liquidate',
+      title: `Keeper Liquidation on ${formatAddress(trove.borrower)}`,
+      amountDisplay: `${trove.debtMusd.toFixed(2)} MUSD`,
+      writeCall: () =>
+        writeVaultAsync({
+          address: CONTRACT_ADDRESSES.vault,
+          abi: VAULT_ABI,
+          functionName: 'liquidate',
+          args: [
+            trove.borrower as `0x${string}`,
+            parseEther(trove.debtMusd.toString()),
+            trove.isNative,
+          ],
+        }),
+      onReceipt: () => {
+        setKeeperLiquidatedIds((prev) => [...prev, trove.id]);
+        const profitUsd = trove.debtMusd * (effectiveKeeperBonusPercent / 100);
+        setKeeperEarningsUSD((prev) => prev + profitUsd);
+        setKeeperCount((prev) => prev + 1);
+        refetchDebt();
+        refetchCollateral();
+        refetchTbtc();
+        refetchMusd();
+        return `Successfully liquidated trove for ${trove.borrower.slice(0, 8)}... Claimed +${profitUsd.toFixed(2)} MUSD keeper bounty!`;
+      },
     });
   };
 
@@ -3286,10 +3299,10 @@ export default function Home() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   {[
-                    { id: 'enterprise', label: 'Enterprise Payroll Alpha', col: '1.25 BTC', debt: '$48,000' },
-                    { id: 'miner', label: 'High-Leverage Miner Rig', col: '0.85 BTC', debt: '$52,000' },
-                    { id: 'treasury', label: 'DAO Treasury Vault', col: '4.00 BTC', debt: '$110,000' },
-                    { id: 'wallet', label: isConnected && collateralEth > 0 ? 'My Connected Trove' : 'Custom Trove Inputs', col: isConnected && collateralEth > 0 ? `${collateralEth.toFixed(2)} BTC` : 'Custom', debt: isConnected && debtEth > 0 ? `$${debtEth.toLocaleString()}` : 'Custom' },
+                    { id: 'borrower1', label: 'Mezo Testnet Borrower #1', col: '0.05 tBTC', debt: '$1,790' },
+                    { id: 'vaultTrove', label: 'MezoFlow Composed Trove', col: '0.05 BTC', debt: '$1,800' },
+                    { id: 'wallet', label: isConnected && collateralEth > 0 ? 'My Connected Trove' : 'Connected Wallet', col: isConnected && collateralEth > 0 ? `${collateralEth.toFixed(2)} BTC` : 'Live', debt: isConnected && debtEth > 0 ? `$${debtEth.toLocaleString()}` : 'Live' },
+                    { id: 'custom', label: 'Stress-Test Simulation', col: '0.10 BTC', debt: '$3,500' },
                   ].map((p) => (
                     <button
                       key={p.id}
@@ -3639,7 +3652,7 @@ export default function Home() {
                             <div className="text-[11px] text-[#77756F]">{formatAddress(t.borrower)}</div>
                           </td>
                           <td className="py-3.5 px-4 font-bold text-[#171715]">
-                            {t.collateralBtc.toFixed(2)} BTC
+                            {t.collateralBtc.toFixed(2)} {t.isNative ? 'BTC' : 'tBTC'}
                           </td>
                           <td className="py-3.5 px-4 text-[#171715]">
                             ${t.debtMusd.toLocaleString()}
