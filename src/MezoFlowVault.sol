@@ -52,11 +52,17 @@ interface IPayrollStreamer {
     function getUnvestedBuffer(uint256 streamId) external view returns (uint256);
 }
 
+interface IMezoStakingBoost {
+    function getFeeDiscountBps(address user) external view returns (uint256);
+    function getKeeperBonusBoostBps(address user) external view returns (uint256);
+    function depositProtocolRevenue(uint256 amount) external;
+}
+
 /**
  * @title MezoFlowVault
  * @notice Protocol-aware Bitcoin collateral vault integrated with Mezo's native BorrowerOperations and PriceFeed.
  * Supports explicit separation of native BTC and tBTC collateral, dynamic oracle pricing, keeper liquidations,
- * and closed-loop Self-Healing Trove automated debt amortization.
+ * closed-loop Self-Healing Trove automated debt amortization, and MEZO staking fee discounts.
  */
 contract MezoFlowVault {
     address public owner;
@@ -74,6 +80,10 @@ contract MezoFlowVault {
     address public payrollStreamer;
     uint256 public constant AUTO_HEAL_ICR_THRESHOLD = 135e16; // 135% ICR trigger
     uint256 public constant TARGET_HEALTHY_ICR = 170e16; // 170% target healthy ICR
+
+    // Wave 2 additions: MEZO Governance Staking Boost
+    address public mezoStakingBoost;
+    uint256 public baseBorrowingFeeBps = 0; // Configurable base borrow fee (e.g. 50 bps = 0.50%)
 
     uint256 public constant MAX_LTV_BPS = 6000; // 60% Max Borrow LTV
     uint256 public constant LIQUIDATION_THRESHOLD_BPS = 7500; // 75% Liquidation LTV
@@ -104,6 +114,8 @@ contract MezoFlowVault {
     event MezoTroveAdjusted(uint256 collAdded, uint256 debtRepaid);
     event PriceFeedUpdated(address newPriceFeed);
     event PayrollStreamerUpdated(address newStreamer);
+    event MezoStakingBoostUpdated(address indexed newBoost);
+    event BaseBorrowingFeeUpdated(uint256 newFeeBps);
     event TroveAutoHealed(
         address indexed employer,
         uint256 indexed streamId,
@@ -146,6 +158,17 @@ contract MezoFlowVault {
     function setPayrollStreamer(address _streamer) external onlyOwner {
         payrollStreamer = _streamer;
         emit PayrollStreamerUpdated(_streamer);
+    }
+
+    function setMezoStakingBoost(address _boost) external onlyOwner {
+        mezoStakingBoost = _boost;
+        emit MezoStakingBoostUpdated(_boost);
+    }
+
+    function setBaseBorrowingFeeBps(uint256 _feeBps) external onlyOwner {
+        require(_feeBps <= 500, "Max fee is 5%");
+        baseBorrowingFeeBps = _feeBps;
+        emit BaseBorrowingFeeUpdated(_feeBps);
     }
 
     // --- Price Oracle Logic ---
@@ -315,9 +338,27 @@ contract MezoFlowVault {
         uint256 maxBorrow = getMaxBorrow(msg.sender);
         require(borrowedMUSD[msg.sender] + amount <= maxBorrow, "Exceeds max LTV");
 
+        uint256 fee = 0;
+        if (baseBorrowingFeeBps > 0) {
+            uint256 discountBps = 0;
+            if (mezoStakingBoost != address(0)) {
+                discountBps = IMezoStakingBoost(mezoStakingBoost).getFeeDiscountBps(msg.sender);
+            }
+            uint256 effectiveFeeBps = (baseBorrowingFeeBps * (BPS_DENOMINATOR - discountBps)) / BPS_DENOMINATOR;
+            fee = (amount * effectiveFeeBps) / BPS_DENOMINATOR;
+        }
+
+        uint256 netAmount = amount - fee;
         borrowedMUSD[msg.sender] += amount;
-        bool success = IERC20(musdToken).transfer(msg.sender, amount);
+
+        bool success = IERC20(musdToken).transfer(msg.sender, netAmount);
         require(success, "Transfer failed");
+
+        if (fee > 0 && mezoStakingBoost != address(0)) {
+            IERC20(musdToken).approve(mezoStakingBoost, fee);
+            IMezoStakingBoost(mezoStakingBoost).depositProtocolRevenue(fee);
+        }
+
         emit MUSDBorrowed(msg.sender, amount);
     }
 
@@ -348,7 +389,11 @@ contract MezoFlowVault {
         require(isLiquidatable(user), "Position not liquidatable");
 
         uint256 btcPrice = getBTCPrice();
-        uint256 collateralValueWithBonus = (debtToRepay * (BPS_DENOMINATOR + LIQUIDATION_BONUS_BPS)) / BPS_DENOMINATOR;
+        uint256 keeperBonusBps = LIQUIDATION_BONUS_BPS;
+        if (mezoStakingBoost != address(0)) {
+            keeperBonusBps += IMezoStakingBoost(mezoStakingBoost).getKeeperBonusBoostBps(msg.sender);
+        }
+        uint256 collateralValueWithBonus = (debtToRepay * (BPS_DENOMINATOR + keeperBonusBps)) / BPS_DENOMINATOR;
         uint256 collateralSeized = (collateralValueWithBonus * 1e18) / btcPrice;
 
         if (seizeNative) {

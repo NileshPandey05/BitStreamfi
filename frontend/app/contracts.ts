@@ -9,6 +9,7 @@ export const CONTRACT_ADDRESSES = {
   mezo: "0x7B7c000000000000000000000000000000000001" as const, // Official MEZO Governance Token
   priceFeed: "0x86bCF0841622a5dAC14A313a15f96A95421b9366" as const, // Official Mezo Live PriceFeed Oracle
   borrowerOperations: "0xCdF7028ceAB81fA0C6971208e83fa7872994beE5" as const, // Official Mezo BorrowerOperations
+  stakingBoost: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D" as const, // MEZO Staking Boost
 };
 
 export const ERC20_ABI = [
@@ -269,6 +270,20 @@ export const VAULT_ABI = [
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
   },
+  {
+    type: "function",
+    name: "baseBorrowingFeeBps",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "mezoStakingBoost",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
 ] as const;
 
 export const STREAMER_ABI = [
@@ -408,5 +423,109 @@ export const CREDIT_ENGINE_ABI = [
     ],
     outputs: [],
     stateMutability: "nonpayable",
+  },
+] as const;
+
+export const STAKING_BOOST_ABI = [
+  {
+    type: "function",
+    name: "stake",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "initiateUnstake",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "claimUnstaked",
+    inputs: [],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "cancelUnstake",
+    inputs: [],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "claimRewards",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "depositProtocolRevenue",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "earned",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getTier",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "uint8" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getFeeDiscountBps",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getKeeperBonusBoostBps",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "stakedBalance",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "totalStaked",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "unbondingRequests",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [
+      { name: "amount", type: "uint256" },
+      { name: "releaseTime", type: "uint256" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "cooldownPeriod",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
   },
 ] as const;
