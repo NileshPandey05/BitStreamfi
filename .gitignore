@@ -38,6 +38,7 @@ Screenshot_*.png
 *.md
 !README.md
 !WAVE2_NEW_IMPLEMENTATION_PROPOSAL.md
+!WAVE2_FULL_IMPLEMENTATION_PLAN.md
 frontend/*.md
 !frontend/README.md
 research_docs/
