@@ -1,20 +1,21 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { useAccount, useConnect, useDisconnect, useReadContract, useWriteContract, usePublicClient, useChainId, useSwitchChain, useBalance } from 'wagmi';
 import { CONTRACT_ADDRESSES, MEZO_TESTNET_CHAIN_ID, VAULT_ABI, STREAMER_ABI, CREDIT_ENGINE_ABI, ERC20_ABI, STAKING_BOOST_ABI } from './contracts';
 import { parseEther, formatEther, isAddress } from 'viem';
-import { Shield, Zap, DollarSign, Clock, Wallet, ArrowUpRight, PlusCircle, XCircle, X, Activity, ChevronRight, CheckCircle2, RefreshCw, AlertTriangle, ExternalLink, Layers, Award, Droplets, ChevronDown, LogOut, ArrowRightLeft, Sliders, Flame, Sparkles, TrendingDown, TrendingUp, RotateCcw, Crosshair } from 'lucide-react';
-import { WalletModal, getWalletIcon } from './components/WalletModal';
-
-interface TransactionRecord {
-  hash: string;
-  type: string;
-  amount: string;
-  status: 'pending' | 'success' | 'failed';
-  timestamp: string;
-}
+import { TransactionRecord, ActiveAction, ArenaTrove, TabType } from './types';
+import { Header } from './components/Header';
+import { NavigationTabs } from './components/NavigationTabs';
+import { TxBanner } from './components/TxBanner';
+import { Footer } from './components/Footer';
+import { OverviewTab } from './components/tabs/OverviewTab';
+import { VaultTab } from './components/tabs/VaultTab';
+import { PayrollTab } from './components/tabs/PayrollTab';
+import { StakingTab } from './components/tabs/StakingTab';
+import { SimulatorTab } from './components/tabs/SimulatorTab';
+import { ActivityTab } from './components/tabs/ActivityTab';
+import { WalletModal } from './components/WalletModal';
 
 export default function Home() {
   const { address, isConnected, connector } = useAccount();
@@ -135,34 +136,6 @@ export default function Home() {
     const clean = raw.split('\n')[0].replace(/URL: https:\/\/.*/, '').replace(/Request Arguments:.*/, '').trim();
     return clean.slice(0, 140) || fallback;
   };
-
-  type ActiveAction =
-    | 'idle'
-    | 'deposit_collateral'
-    | 'withdraw_collateral'
-    | 'borrow_musd'
-    | 'repay_musd'
-    | 'approve_repay'
-    | 'approve_yield'
-    | 'deposit_yield'
-    | 'withdraw_yield'
-    | 'amortize'
-    | 'approve_stream'
-    | 'create_stream'
-    | 'top_up_stream'
-    | 'withdraw_stream'
-    | 'cancel_stream'
-    | 'faucet_tbtc'
-    | 'approve_tbtc_vault'
-    | 'liquidate'
-    | 'auto_heal_trove'
-    | 'set_stream_split'
-    | 'approve_mezo'
-    | 'stake_mezo'
-    | 'initiate_unstake'
-    | 'claim_unstaked'
-    | 'cancel_unstake'
-    | 'claim_staking_rewards';
 
   const [activeAction, setActiveAction] = useState<ActiveAction>('idle');
 
@@ -604,16 +577,6 @@ export default function Home() {
     setSimHealedState(false);
     setSimHealToast(null);
   };
-
-  interface ArenaTrove {
-    id: string;
-    name: string;
-    borrower: string;
-    collateralBtc: number;
-    debtMusd: number;
-    escrowBuffer: number;
-    isNative: boolean;
-  }
 
   const arenaTroves: ArenaTrove[] = [
     {
@@ -1444,2412 +1407,273 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#F6F4EF] text-[#171715] flex flex-col font-sans selection:bg-[#E66C35]/20 selection:text-[#E66C35]">
+      {/* HEADER & WRONG NETWORK WARNING */}
+      <Header
+        mounted={mounted}
+        isConnected={isConnected}
+        address={address}
+        connector={connector}
+        chainId={chainId}
+        btcPriceUSD={btcPriceUSD}
+        activeAction={activeAction}
+        genericPending={genericPending}
+        isReady={isReady}
+        handleOpenConnectWallet={handleOpenConnectWallet}
+        handleOpenManageWallet={handleOpenManageWallet}
+        handleClaimFaucet={handleClaimFaucet}
+        switchChain={switchChain}
+        formatAddress={formatAddress}
+      />
 
-      {/* Wrong Network Banner */}
-      {isWrongNetwork && (
-        <div className="bg-[#C7473A] text-white px-6 py-2.5 text-xs font-mono flex items-center justify-between z-50">
-          <div className="flex items-center space-x-2">
-            <AlertTriangle className="w-4 h-4" />
-            <span>Wrong network connected. BitStreamfi operates on Mezo Testnet (Chain ID 31611).</span>
-          </div>
-          <button
-            onClick={() => switchChain({ chainId: MEZO_TESTNET_CHAIN_ID })}
-            className="bg-white text-[#C7473A] font-bold px-3 py-1 rounded hover:bg-slate-100 transition-colors"
-          >
-            Switch to Mezo Testnet
-          </button>
-        </div>
-      )}
-
-      {/* Transaction Status Toast */}
-      {txStatus !== 'idle' && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#FBFAF7] border border-[#DEDBD3] p-4 rounded-2xl shadow-2xl max-w-sm sm:max-w-md w-full flex flex-col space-y-2 animate-fadeIn">
-          <div className="flex items-start justify-between space-x-3">
-            <div className="flex items-start space-x-3 flex-1 min-w-0">
-              {txStatus === 'success' && <CheckCircle2 className="w-5 h-5 text-[#258454] shrink-0 mt-0.5" />}
-              {txStatus === 'failed' && <XCircle className="w-5 h-5 text-[#C7473A] shrink-0 mt-0.5" />}
-              {(txStatus === 'pending' || txStatus === 'wallet_confirm' || txStatus === 'preparing') && (
-                <RefreshCw className="w-5 h-5 text-[#E66C35] shrink-0 mt-0.5 animate-spin" />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold uppercase tracking-wider text-[#77756F]">
-                  {txStatus === 'success'
-                    ? 'Confirmed on Mezo L2'
-                    : txStatus === 'failed'
-                    ? 'Transaction Failed'
-                    : txStatus === 'wallet_confirm'
-                    ? 'Awaiting Wallet Signature'
-                    : 'Broadcasting to Mezo'}
-                </p>
-                <p className="text-xs text-[#171715] font-mono mt-1 break-words">{statusMessage}</p>
-              </div>
-            </div>
-            <button onClick={() => setTxStatus('idle')} className="text-[#77756F] hover:text-[#171715]">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* HEADER */}
-      <header className="border-b border-[#DEDBD3] bg-[#FBFAF7]/80 backdrop-blur sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
-          <div className="flex items-center space-x-4">
-            <div className="bg-[#171715] text-[#F6F4EF] w-10 h-10 rounded-xl flex items-center justify-center font-serif-display font-bold text-xl shadow-md">
-              ₿
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h1 className="font-serif-display text-2xl font-bold tracking-tight text-[#171715]">BitStreamfi</h1>
-                <span className="text-[10px] font-mono bg-[#E66C35]/15 text-[#E66C35] px-2 py-0.5 rounded-full font-bold">
-                  Wave 2 Composable
-                </span>
-              </div>
-              <p className="text-xs font-mono text-[#77756F]">Bitcoin Collateral • Mezo Troves • MUSD Streaming</p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-3">
-            {/* Live Oracle Price Badge */}
-            <div className="hidden sm:flex items-center space-x-2 bg-[#F6F4EF] border border-[#DEDBD3] px-3 py-1.5 rounded-xl text-xs font-mono">
-              <span className="w-2 h-2 rounded-full bg-[#258454] animate-pulse" />
-              <span className="text-[#77756F]">Mezo Oracle:</span>
-              <strong className="text-[#171715]">${btcPriceUSD.toLocaleString()}</strong>
-            </div>
-
-            {/* Test tBTC Faucet Button */}
-            <button
-              onClick={handleClaimFaucet}
-              disabled={(genericPending && activeAction === 'faucet_tbtc') || !isReady}
-              className="hidden md:flex items-center space-x-1.5 bg-[#E66C35]/10 hover:bg-[#E66C35]/20 text-[#E66C35] border border-[#E66C35]/30 text-xs font-mono font-bold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50"
-              title="Claim 1,000 Test tBTC ERC-20 tokens directly to your wallet"
-            >
-              <Droplets className="w-3.5 h-3.5" />
-              <span>{activeAction === 'faucet_tbtc' ? 'Claiming...' : 'tBTC Faucet'}</span>
-            </button>
-
-            {/* Wallet Connect & Account Management */}
-            {mounted && isConnected ? (
-              <button
-                onClick={handleOpenManageWallet}
-                className="flex items-center space-x-2.5 bg-[#F6F4EF] hover:bg-[#EFECE6] border border-[#DEDBD3] hover:border-[#171715] px-3.5 py-2 rounded-xl transition-all shadow-xs group cursor-pointer"
-                title="Manage wallet, view account details, switch wallet, or disconnect"
-              >
-                <div className="w-5 h-5 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  {getWalletIcon(connector?.name || connector?.id, undefined, 'w-4 h-4')}
-                </div>
-                <div className="hidden sm:flex flex-col text-left font-mono text-xs">
-                  <div className="flex items-center space-x-1.5 leading-tight">
-                    <span className="text-[#171715] font-bold group-hover:text-[#E66C35] transition-colors">
-                      {formatAddress(address)}
-                    </span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#258454] animate-pulse" />
-                  </div>
-                  <span className="text-[10px] text-[#77756F] leading-tight">
-                    {connector?.name || 'Mezo Testnet'}
-                  </span>
-                </div>
-                <span className="sm:hidden font-mono text-xs font-bold text-[#171715]">
-                  {formatAddress(address)}
-                </span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#77756F] group-hover:text-[#171715] group-hover:translate-y-0.5 transition-all ml-0.5" />
-              </button>
-            ) : (
-              <button
-                onClick={handleOpenConnectWallet}
-                className="bg-[#171715] hover:bg-[#E66C35] text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-sm flex items-center space-x-2 cursor-pointer"
-              >
-                <Wallet className="w-4 h-4" />
-                <span>Connect Wallet</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
+      {/* FLOATING TX STATUS BANNER */}
+      <TxBanner
+        txStatus={txStatus}
+        statusMessage={statusMessage}
+        onClose={() => setTxStatus('idle')}
+      />
 
       {/* MAIN CONTAINER */}
       <div className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 flex flex-col space-y-8">
-
         {/* NAVIGATION TABS */}
-        <nav className="flex justify-between items-center border-b border-[#DEDBD3] pb-4">
-          <div className="flex space-x-2 bg-[#FBFAF7] p-1.5 rounded-2xl border border-[#DEDBD3]">
-            {[
-              { id: 'overview', label: '1. Overview' },
-              { id: 'vault', label: '2. Vault & Credit' },
-              { id: 'payroll', label: '3. MUSD Payroll' },
-              { id: 'staking', label: '4. MEZO Staking' },
-              { id: 'simulator', label: '5. Risk & Keeper Arena' },
-              { id: 'activity', label: '6. Activity' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`px-5 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
-                  activeTab === tab.id
-                    ? 'bg-[#171715] text-white shadow-sm'
-                    : 'text-[#77756F] hover:text-[#171715] hover:bg-[#F6F4EF]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        <NavigationTabs
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          troveIcrNum={troveIcrNum}
+        />
 
-          {/* Trove Composed Badge */}
-          <div className="hidden lg:flex items-center space-x-2 text-xs font-mono bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
-            <span className="text-[#258454] font-bold">● Trove ICR: {troveIcrNum.toFixed(1)}%</span>
-            <span className="text-[#77756F]">| Composed with BorrowerOperations</span>
-          </div>
-        </nav>
-
-        {/* TAB 1: OVERVIEW & MASTER ANATOMY */}
+        {/* TAB 1: OVERVIEW */}
         {activeTab === 'overview' && (
-          <div className="space-y-12 animate-fadeIn">
-            <div className="max-w-3xl space-y-3">
-              <p className="text-xs font-mono uppercase text-[#E66C35] tracking-widest font-semibold">Protocol Architecture — Wave 2</p>
-              <h2 className="text-5xl font-serif-display font-normal tracking-tight leading-none text-[#171715]">
-                Composable Bitcoin Credit.
-              </h2>
-              <p className="text-sm text-[#77756F] leading-relaxed">
-                BitStreamfi connects Bitcoin collateral to Mezo's native <strong>BorrowerOperations</strong> and live <strong>PriceFeed</strong> oracle.
-                Instead of selling BTC, lock native BTC or tBTC, borrow real testnet MUSD stablecoins at ≤60% LTV, stream salaries second-by-second,
-                and amortize debt automatically.
-              </p>
-            </div>
-
-            {/* MASTER ANATOMY MACHINE */}
-            <div className="bg-[#121c2e] border-2 border-[#C59B27]/40 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-tr from-[#0a111c] via-[#121c2e] to-[#1a2942] pointer-events-none" />
-
-              <div className="relative z-10 flex flex-col items-center">
-                <div className="w-full flex justify-between items-center mb-6 border-b border-slate-700/60 pb-3">
-                  <div className="flex items-center space-x-3">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#C59B27] animate-pulse"></span>
-                    <span className="text-xs font-mono uppercase tracking-widest text-slate-300">FIG. 1 — BitStreamfi & Mezo Native Trove Pipeline</span>
-                  </div>
-                  <div className="text-xs font-mono text-[#C59B27] bg-[#C59B27]/10 px-3 py-1 rounded border border-[#C59B27]/30">
-                    Live Oracle: ${btcPriceUSD.toLocaleString()} USD
-                  </div>
-                </div>
-
-                <div className="w-full h-[390px] flex justify-center items-center overflow-hidden my-2">
-                  <iframe
-                    src="/vault-anatomy/embed.html"
-                    className="w-full h-full border-0 bg-transparent"
-                    title="BitStreamfi Isometric Collateral Vault Animation"
-                  />
-                </div>
-
-                <div className="w-full grid grid-cols-1 md:grid-cols-4 gap-4 mt-6 pt-4 border-t border-slate-700/60 text-xs font-mono text-slate-300">
-                  <div>
-                    <span className="text-[#C59B27]">●</span> Native BTC: <strong className="text-white">{nativeCollateralEth.toFixed(4)} BTC</strong>
-                  </div>
-                  <div>
-                    <span className="text-[#C59B27]">●</span> tBTC Collateral: <strong className="text-white">{tbtcCollateralEth.toFixed(4)} tBTC</strong>
-                  </div>
-                  <div>
-                    <span className="text-[#C59B27]">●</span> Active Debt: <strong className="text-white">{debtEth.toLocaleString()} MUSD</strong>
-                  </div>
-                  <div>
-                    <span className="text-[#C59B27]">●</span> Health / LTV: <strong className={ltvStatusColor}>{collateralValueUSD > 0 ? `${ltvNumeric.toFixed(1)}%` : '0.0%'} (Max 60%)</strong>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* PROTOCOL METRICS & COMPOSITION GRID */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Protocol Trove Integration */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-6 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#171715]">Mezo Trove Protocol</h4>
-                  <span className="text-[10px] font-mono bg-[#258454]/15 text-[#258454] px-2 py-0.5 rounded font-bold">Composed</span>
-                </div>
-                <div className="space-y-2 text-xs font-mono">
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">Trove Status:</span>
-                    <strong className="text-[#258454]">Active (Mezo L2)</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">Trove Debt:</span>
-                    <strong className="text-[#171715]">{troveDebtNum.toFixed(1)} MUSD</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">Trove Collateral:</span>
-                    <strong className="text-[#171715]">{troveCollNum.toFixed(4)} BTC</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">Trove ICR:</span>
-                    <strong className="text-[#258454]">{troveIcrNum.toFixed(1)}%</strong>
-                  </div>
-                </div>
-              </div>
-
-              {/* Live PriceFeed Oracle */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-6 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#171715]">Live PriceFeed Oracle</h4>
-                  <span className="text-[10px] font-mono bg-[#258454]/15 text-[#258454] px-2 py-0.5 rounded font-bold">On-Chain</span>
-                </div>
-                <div className="space-y-2 text-xs font-mono">
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">Oracle Source:</span>
-                    <strong className="text-[#171715]">Mezo PriceFeed</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">BTC/USD Price:</span>
-                    <strong className="text-[#258454]">${btcPriceUSD.toLocaleString()}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">Pricing Model:</span>
-                    <strong className="text-[#171715]">Dynamic (No mock $60k)</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">Max LTV Allowed:</span>
-                    <strong className="text-[#171715]">60.00%</strong>
-                  </div>
-                </div>
-              </div>
-
-              {/* Safety & Liquidation */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-6 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#171715]">Liquidation Engine</h4>
-                  <span className="text-[10px] font-mono bg-[#B7791F]/15 text-[#B7791F] px-2 py-0.5 rounded font-bold">Keeper Ready</span>
-                </div>
-                <div className="space-y-2 text-xs font-mono">
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">Liquidation Threshold:</span>
-                    <strong className="text-[#171715]">75.00% LTV</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">Keeper Bonus:</span>
-                    <strong className="text-[#258454]">5.00% Incentive</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">Your Position Status:</span>
-                    <strong className={isUserLiquidatable ? 'text-[#C7473A]' : 'text-[#258454]'}>
-                      {isUserLiquidatable ? 'Liquidatable (At Risk)' : 'Healthy & Safe'}
-                    </strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#77756F]">Accounting:</span>
-                    <strong className="text-[#171715]">Native / tBTC Separated</strong>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Action Banner */}
-            <div className="p-6 bg-[#FBFAF7] rounded-2xl border border-[#DEDBD3] flex flex-col md:flex-row items-center justify-between gap-4">
-              <div>
-                <h4 className="font-serif-display font-bold text-xl text-[#171715]">Ready to stream Bitcoin-backed payroll?</h4>
-                <p className="text-xs text-[#77756F] mt-1">Deposit collateral, draw real MUSD, and stream second-by-second to employees or contractors.</p>
-              </div>
-              <div className="flex flex-wrap gap-2.5">
-                <button
-                  onClick={() => setActiveTab('vault')}
-                  className="bg-[#171715] hover:bg-[#E66C35] text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
-                >
-                  Go to Vault & Borrow →
-                </button>
-                <button
-                  onClick={() => setActiveTab('payroll')}
-                  className="bg-[#FBFAF7] hover:bg-[#F6F4EF] border border-[#DEDBD3] text-[#171715] text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
-                >
-                  Create Stream →
-                </button>
-                <button
-                  onClick={() => setActiveTab('simulator')}
-                  className="bg-[#E66C35]/10 hover:bg-[#E66C35]/20 border border-[#E66C35]/30 text-[#E66C35] text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors flex items-center space-x-1.5 cursor-pointer"
-                >
-                  <Flame className="w-3.5 h-3.5" />
-                  <span>Risk Simulator & Arena →</span>
-                </button>
-              </div>
-            </div>
-          </div>
+          <OverviewTab
+            btcPriceUSD={btcPriceUSD}
+            nativeCollateralEth={nativeCollateralEth}
+            tbtcCollateralEth={tbtcCollateralEth}
+            debtEth={debtEth}
+            ltvStatusColor={ltvStatusColor}
+            collateralValueUSD={collateralValueUSD}
+            ltvNumeric={ltvNumeric}
+            troveDebtNum={troveDebtNum}
+            troveCollNum={troveCollNum}
+            troveIcrNum={troveIcrNum}
+            isUserLiquidatable={Boolean(isUserLiquidatable)}
+            setActiveTab={setActiveTab}
+          />
         )}
 
-        {/* TAB 2: VAULT, BORROWING, CREDIT ENGINE & LIQUIDATION */}
+        {/* TAB 2: VAULT & CREDIT */}
         {activeTab === 'vault' && (
-          <div className="space-y-8 animate-fadeIn">
-            {mounted && !isConnected && (
-              <div className="bg-[#FBFAF7] border border-[#E66C35]/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
-                <div className="flex items-center space-x-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-[#E66C35]/10 text-[#E66C35] flex items-center justify-center shrink-0">
-                    <Wallet className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-serif-display text-lg font-bold text-[#171715]">Connect Wallet to Transact</h4>
-                    <p className="text-xs text-[#77756F]">Select MetaMask, Phantom, or browser extension to manage vaults and troves.</p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleOpenConnectWallet}
-                  className="w-full sm:w-auto px-5 py-2.5 bg-[#171715] hover:bg-[#E66C35] text-white text-xs font-semibold rounded-xl transition-all shrink-0 flex items-center justify-center space-x-2 cursor-pointer"
-                >
-                  <Wallet className="w-4 h-4" />
-                  <span>Select & Connect Wallet</span>
-                </button>
-              </div>
-            )}
-            <div className="border-b border-[#DEDBD3] pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-3xl font-serif-display font-bold text-[#171715]">MezoFlow Vault & Credit Operations</h2>
-                <p className="text-xs text-[#77756F] mt-1">
-                  Manage Bitcoin collateral, borrow real MUSD stablecoins, amortize debt, or perform keeper liquidations.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-xs font-mono">
-                <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
-                  <span className="text-[#77756F]">Gas BTC: </span>
-                  <strong className="text-[#171715]">{mounted && nativeBalance ? Number(formatEther(nativeBalance.value)).toFixed(4) : '0.0000'}</strong>
-                </div>
-                <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
-                  <span className="text-[#77756F]">Wallet tBTC: </span>
-                  <strong className="text-[#171715]">{mounted && tbtcBalance ? Number(formatEther(tbtcBalance as bigint)).toFixed(4) : '0.0000'}</strong>
-                </div>
-                <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
-                  <span className="text-[#77756F]">Wallet MUSD: </span>
-                  <strong className="text-[#171715]">{mounted && musdBalance ? Number(formatEther(musdBalance as bigint)).toLocaleString() : '0'}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
-              {/* CARD 1: DEPOSIT & WITHDRAW COLLATERAL */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl shadow-sm space-y-6">
-                <div className="flex items-center justify-between border-b border-[#DEDBD3] pb-3">
-                  <div className="flex items-center space-x-2">
-                    <Shield className="w-5 h-5 text-[#E66C35]" />
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Collateral Management</h3>
-                  </div>
-                  <span className="text-xs font-mono text-[#77756F]">Live Oracle: ${btcPriceUSD.toLocaleString()} / BTC</span>
-                </div>
-
-                {/* Collateral Breakdown */}
-                <div className="grid grid-cols-2 gap-3 text-xs font-mono bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3]">
-                  <div>
-                    <span className="text-[#77756F] block">Native BTC Locked:</span>
-                    <strong className="text-[#171715] text-sm">{nativeCollateralEth.toFixed(4)} BTC</strong>
-                  </div>
-                  <div>
-                    <span className="text-[#77756F] block">tBTC Locked:</span>
-                    <strong className="text-[#171715] text-sm">{tbtcCollateralEth.toFixed(4)} tBTC</strong>
-                  </div>
-                </div>
-
-                {/* Deposit Form */}
-                <form onSubmit={handleDepositCollateral} className="space-y-4">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <label className="font-bold text-[#171715]">1. Deposit Bitcoin Collateral</label>
-                    <div className="flex space-x-1 bg-[#DEDBD3]/40 p-1 rounded-lg">
-                      <button
-                        type="button"
-                        onClick={() => setCollateralMode('native')}
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${collateralMode === 'native' ? 'bg-[#171715] text-white' : 'text-[#77756F]'}`}
-                      >
-                        Native BTC
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCollateralMode('tbtc')}
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${collateralMode === 'tbtc' ? 'bg-[#171715] text-white' : 'text-[#77756F]'}`}
-                      >
-                        tBTC ERC-20
-                      </button>
-                    </div>
-                  </div>
-
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={collateralAmount}
-                    onChange={(e) => setCollateralAmount(e.target.value)}
-                    placeholder={collateralMode === 'native' ? '0.05 BTC (Native gas token)' : '1.0 tBTC'}
-                    className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
-                  />
-
-                  {collateralMode === 'tbtc' && (
-                    <div className="flex space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => handleApprove('tbtc', 'vault', collateralAmount || '10')}
-                        disabled={(genericPending && activeAction === 'approve_tbtc_vault') || !isReady}
-                        className={`flex-1 font-semibold py-2.5 rounded-xl text-xs transition-colors ${
-                          isTbtcApproved
-                            ? 'bg-[#258454]/10 border border-[#258454]/40 text-[#258454]'
-                            : 'bg-[#E66C35] text-white animate-pulse'
-                        } disabled:opacity-50`}
-                      >
-                        {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'approve_tbtc_vault'
-                          ? 'Approving...'
-                          : isTbtcApproved
-                          ? '✓ tBTC Approved'
-                          : '1. Approve tBTC'}
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={(vaultPending && activeAction === 'deposit_collateral') || !isReady || !collateralAmount || Number(collateralAmount) <= 0 || !isTbtcApproved}
-                        className="flex-1 bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
-                      >
-                        {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'deposit_collateral' ? 'Depositing...' : '2. Deposit tBTC'}
-                      </button>
-                    </div>
-                  )}
-
-                  {collateralMode === 'native' && (
-                    <button
-                      type="submit"
-                      disabled={(vaultPending && activeAction === 'deposit_collateral') || !isReady || !collateralAmount || Number(collateralAmount) <= 0}
-                      className="w-full bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
-                    >
-                      {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'deposit_collateral' ? 'Depositing...' : 'Deposit Native BTC'}
-                    </button>
-                  )}
-                </form>
-
-                {/* Withdraw Form */}
-                <form onSubmit={handleWithdrawCollateral} className="space-y-4 pt-4 border-t border-[#DEDBD3]">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <label className="font-bold text-[#171715]">2. Withdraw Collateral</label>
-                    <div className="flex space-x-1 bg-[#DEDBD3]/40 p-1 rounded-lg">
-                      <button
-                        type="button"
-                        onClick={() => setWithdrawMode('native')}
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${withdrawMode === 'native' ? 'bg-[#171715] text-white' : 'text-[#77756F]'}`}
-                      >
-                        Native BTC
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setWithdrawMode('tbtc')}
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${withdrawMode === 'tbtc' ? 'bg-[#171715] text-white' : 'text-[#77756F]'}`}
-                      >
-                        tBTC ERC-20
-                      </button>
-                    </div>
-                  </div>
-
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={withdrawAmount}
-                    onChange={(e) => setWithdrawAmount(e.target.value)}
-                    placeholder={`Max safe withdrawal: ${maxWithdrawableEth.toFixed(4)} BTC`}
-                    className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={(vaultPending && activeAction === 'withdraw_collateral') || !isReady || collateralEth <= 0 || !withdrawAmount || Number(withdrawAmount) <= 0}
-                    className="w-full bg-[#FBFAF7] hover:bg-[#F6F4EF] border border-[#DEDBD3] text-[#171715] font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
-                  >
-                    {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'withdraw_collateral'
-                      ? 'Withdrawing...'
-                      : `Withdraw ${withdrawMode === 'native' ? 'Native BTC' : 'tBTC'}`}
-                  </button>
-                </form>
-              </div>
-
-              {/* CARD 2: BORROW & REPAY MUSD */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl shadow-sm space-y-6">
-                <div className="flex items-center justify-between border-b border-[#DEDBD3] pb-3">
-                  <div className="flex items-center space-x-2">
-                    <DollarSign className="w-5 h-5 text-[#258454]" />
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">MUSD Borrow & Repay</h3>
-                  </div>
-                  <span className={`text-xs font-mono font-bold ${ltvStatusColor}`}>
-                    LTV: {collateralValueUSD > 0 ? `${ltvNumeric.toFixed(1)}%` : '0.0%'} (Max 60%)
-                  </span>
-                </div>
-
-                {/* Metrics */}
-                <div className="grid grid-cols-2 gap-3 text-xs font-mono bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3]">
-                  <div>
-                    <span className="text-[#77756F] block">Total Borrowed Debt:</span>
-                    <strong className="text-[#C7473A] text-sm">{debtEth.toLocaleString()} MUSD</strong>
-                  </div>
-                  <div>
-                    <span className="text-[#77756F] block">Available Borrow Capacity:</span>
-                    <strong className="text-[#258454] text-sm">${availableBorrowUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })} MUSD</strong>
-                  </div>
-                </div>
-
-                {/* Borrow Form */}
-                <form onSubmit={handleBorrowMUSD} className="space-y-4">
-                  <div className="flex justify-between items-center text-xs font-mono">
-                    <label className="font-bold text-[#171715]">Borrow MUSD Against Collateral</label>
-                    <button
-                      type="button"
-                      onClick={() => setBorrowAmount(Math.floor(availableBorrowUSD).toString())}
-                      className="text-[#E66C35] hover:underline"
-                    >
-                      Max Safe Borrow
-                    </button>
-                  </div>
-                  <input
-                    type="number"
-                    step="1"
-                    value={borrowAmount}
-                    onChange={(e) => setBorrowAmount(e.target.value)}
-                    placeholder="5000 MUSD"
-                    className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#258454]"
-                  />
-                  <button
-                    type="submit"
-                    disabled={(vaultPending && activeAction === 'borrow_musd') || !isReady || availableBorrowUSD <= 0 || !borrowAmount || Number(borrowAmount) <= 0}
-                    className="w-full bg-[#171715] hover:bg-[#258454] text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
-                  >
-                    {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'borrow_musd' ? 'Borrowing...' : 'Borrow MUSD Stablecoins'}
-                  </button>
-                </form>
-
-                {/* Repay Form */}
-                <form onSubmit={handleRepayMUSD} className="space-y-4 pt-4 border-t border-[#DEDBD3]">
-                  <div className="flex justify-between items-center text-xs font-mono">
-                    <label className="font-bold text-[#171715]">Repay MUSD Debt</label>
-                    <button
-                      type="button"
-                      onClick={() => setRepayAmount(Math.min(debtEth, musdBalance ? Number(formatEther(musdBalance as bigint)) : 0).toString())}
-                      className="text-[#E66C35] hover:underline"
-                    >
-                      Repay Max Debt
-                    </button>
-                  </div>
-                  <input
-                    type="number"
-                    step="1"
-                    value={repayAmount}
-                    onChange={(e) => setRepayAmount(e.target.value)}
-                    placeholder="Amount to repay"
-                    className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
-                  />
-                  <div className="flex space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => handleApprove('musd', 'vault', repayAmount || '5000')}
-                      disabled={(genericPending && activeAction === 'approve_repay') || !isReady}
-                      className={`flex-1 font-semibold py-2.5 rounded-xl text-xs transition-colors ${
-                        isVaultApproved
-                          ? 'bg-[#258454]/10 border border-[#258454]/40 text-[#258454]'
-                          : 'bg-[#E66C35] text-white animate-pulse'
-                      } disabled:opacity-50`}
-                    >
-                      {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'approve_repay'
-                        ? 'Approving...'
-                        : isVaultApproved
-                        ? '✓ Approved'
-                        : '1. Approve MUSD'}
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={(vaultPending && activeAction === 'repay_musd') || !isReady || debtEth <= 0 || !repayAmount || Number(repayAmount) <= 0 || !isVaultApproved}
-                      className="flex-1 bg-[#171715] hover:bg-[#258454] text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
-                    >
-                      {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'repay_musd' ? 'Repaying...' : '2. Repay Debt'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-
-              {/* CARD 3: CLOSED-LOOP SELF-HEALING TROVE SHIELD (Wave 2 Innovation) */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl lg:col-span-2 shadow-sm space-y-6">
-                <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-[#DEDBD3] pb-3 gap-2">
-                  <div className="flex items-center space-x-2.5">
-                    <Shield className="w-5 h-5 text-[#E66C35]" />
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">
-                      Closed-Loop "Self-Healing Trove" Shield
-                    </h3>
-                    <span className="text-[10px] font-mono bg-[#E66C35]/15 text-[#E66C35] px-2 py-0.5 rounded-full font-bold">
-                      Protocol-Aware
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-2 text-xs font-mono">
-                    <span className="text-[#77756F]">Linked Stream:</span>
-                    <strong className="text-[#171715]">Stream #{streamIdForAutoHeal}</strong>
-                  </div>
-                </div>
-
-                {/* Status Callout Banner */}
-                <div
-                  className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-mono ${
-                    isAutoHealEligible
-                      ? 'bg-[#C7473A]/10 border-[#C7473A]/30 text-[#C7473A]'
-                      : 'bg-[#258454]/10 border-[#258454]/30 text-[#258454]'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2.5">
-                    <Activity className={`w-4 h-4 shrink-0 ${isAutoHealEligible ? 'animate-pulse' : ''}`} />
-                    <span>
-                      {isAutoHealEligible
-                        ? `CRITICAL SHORTFALL DETECTED (ICR: ${autoHealCurrentICR.toFixed(1)}% < 150%). Auto-Heal is armed to reclaim unvested buffer and restore Trove health.`
-                        : `TROVE SHIELD ACTIVE (ICR: ${autoHealCurrentICR > 0 ? autoHealCurrentICR.toFixed(1) : (ltvNumeric > 0 ? (10000 / ltvNumeric).toFixed(1) : '∞')}% >= 150%). Position is healthy. Auto-Heal stands by to intercept drops.`}
-                    </span>
-                  </div>
-                  <span className="font-bold shrink-0 uppercase tracking-wider text-[11px] px-2.5 py-1 rounded bg-white/60">
-                    {isAutoHealEligible ? 'Action Required' : 'Shield Armed'}
-                  </span>
-                </div>
-
-                {/* 3 Metric Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1">
-                    <span className="text-xs font-mono text-[#77756F]">160% Target Recovery Deficit</span>
-                    <div className="text-lg font-mono font-bold text-[#171715]">
-                      {debtToRestoreEth > 0 ? `${debtToRestoreEth.toFixed(2)} MUSD` : '0.00 MUSD'}
-                    </div>
-                    <span className="text-[11px] text-[#77756F] block">Debt repayment needed to reach 160% ICR</span>
-                  </div>
-
-                  <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1">
-                    <span className="text-xs font-mono text-[#77756F]">Unvested Escrow Buffer</span>
-                    <div className="text-lg font-mono font-bold text-[#258454]">
-                      {unvestedBufferEth.toFixed(2)} MUSD
-                    </div>
-                    <span className="text-[11px] text-[#77756F] block">Available in Stream #{streamIdForAutoHeal}</span>
-                  </div>
-
-                  <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1">
-                    <span className="text-xs font-mono text-[#77756F]">Worker Salary Protection</span>
-                    <div className="text-lg font-mono font-bold text-[#171715]">100% Inviolable</div>
-                    <span className="text-[11px] text-[#77756F] block">Vested salary cannot be seized or liquidated</span>
-                  </div>
-                </div>
-
-                {/* Auto-Heal Execution Form */}
-                <form onSubmit={handleAutoHealTrove} className="bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3] space-y-4">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs font-mono">
-                    <label className="font-bold text-[#171715]">
-                      Configure Linked Escrow Stream for Protection:
-                    </label>
-                    <div className="flex items-center space-x-1.5">
-                      <span className="text-[#77756F]">Select Stream ID:</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={streamIdForAutoHeal}
-                        onChange={(e) => setStreamIdForAutoHeal(e.target.value)}
-                        className="w-16 bg-[#FBFAF7] border border-[#DEDBD3] rounded-lg px-2 py-1 text-xs font-mono text-[#171715] focus:outline-none focus:border-[#E66C35]"
-                      />
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-[#77756F] leading-relaxed">
-                    When triggered, the contract reclaims only the required deficit from Stream #{streamIdForAutoHeal}'s unvested buffer to repay vault and Mezo Trove debt. 
-                    Employee earned earnings remain intact, and collateral is safeguarded from keeper liquidation discounts.
-                  </p>
-
-                  <div className="flex flex-col sm:flex-row items-center gap-3">
-                    <button
-                      type="submit"
-                      disabled={!isReady || (vaultPending && activeAction === 'auto_heal_trove') || (!isAutoHealEligible && debtEth === 0)}
-                      className={`w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center space-x-2 ${
-                        isAutoHealEligible
-                          ? 'bg-[#C7473A] hover:bg-red-700 text-white shadow-md animate-pulse cursor-pointer'
-                          : 'bg-[#171715] hover:bg-[#E66C35] text-white cursor-pointer'
-                      } disabled:opacity-50`}
-                    >
-                      <Shield className="w-4 h-4" />
-                      <span>
-                        {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'auto_heal_trove'
-                          ? 'Auto-Healing Trove...'
-                          : isAutoHealEligible
-                          ? 'Execute Auto-Heal Now (Defend Trove)'
-                          : 'Trigger Auto-Heal (Simulate Protection)'}
-                      </span>
-                    </button>
-                    {!isAutoHealEligible && (
-                      <span className="text-[11px] font-mono text-[#77756F]">
-                        ● Position currently safe. Automatically triggers if ICR drops below 150%.
-                      </span>
-                    )}
-                  </div>
-                </form>
-              </div>
-
-              {/* CARD 4: SELF-REPAYING CREDIT ENGINE (High Finding 2 Fix) */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl lg:col-span-2 shadow-sm space-y-6">
-                <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-[#DEDBD3] pb-3 gap-2">
-                  <div className="flex items-center space-x-2">
-                    <Zap className="w-5 h-5 text-[#E66C35]" />
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Self-Repaying Credit Engine</h3>
-                  </div>
-                  <div className="text-xs font-mono text-[#77756F]">
-                    Unamortized Yield Balance: <strong className="text-[#258454]">{mounted && yieldBalance ? Number(formatEther(yieldBalance as bigint)).toLocaleString() : '0'} MUSD</strong>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Deposit Yield */}
-                  <form onSubmit={handleDepositYield} className="space-y-3 bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
-                    <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
-                      <label className="font-bold text-[#171715]">Deposit Yield / Reserve</label>
-                      <span>MUSD: {mounted && musdBalance ? Number(formatEther(musdBalance as bigint)).toLocaleString() : '0'}</span>
-                    </div>
-                    <p className="text-[11px] text-[#77756F]">Deposit MUSD to fund automated debt amortization.</p>
-                    <input
-                      type="number"
-                      step="1"
-                      value={yieldDepositAmount}
-                      onChange={(e) => setYieldDepositAmount(e.target.value)}
-                      placeholder="Amount to deposit"
-                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#E66C35]"
-                    />
-                    <div className="flex space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => handleApprove('musd', 'creditEngine', yieldDepositAmount || '5000')}
-                        disabled={(genericPending && activeAction === 'approve_yield') || !isReady}
-                        className={`flex-1 font-semibold py-2 rounded-lg text-xs transition-colors ${
-                          isCreditEngineApproved
-                            ? 'bg-[#258454]/10 border border-[#258454]/40 text-[#258454]'
-                            : 'bg-[#E66C35] text-white'
-                        } disabled:opacity-50`}
-                      >
-                        {isCreditEngineApproved ? '✓ Approved' : '1. Approve'}
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={(genericPending && activeAction === 'deposit_yield') || !isReady || !yieldDepositAmount || Number(yieldDepositAmount) <= 0 || !isCreditEngineApproved}
-                        className="flex-1 bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2 rounded-lg text-xs transition-colors disabled:opacity-50"
-                      >
-                        {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'deposit_yield' ? 'Depositing...' : '2. Deposit'}
-                      </button>
-                    </div>
-                  </form>
-
-                  {/* Withdraw Yield (High Finding 2 Fix) */}
-                  <form onSubmit={handleWithdrawYield} className="space-y-3 bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
-                    <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
-                      <label className="font-bold text-[#171715]">Reclaim Unamortized Yield</label>
-                      <span>Available: {mounted && yieldBalance ? Number(formatEther(yieldBalance as bigint)).toLocaleString() : '0'}</span>
-                    </div>
-                    <p className="text-[11px] text-[#77756F]">Withdraw unused yield back to your wallet at any time.</p>
-                    <input
-                      type="number"
-                      step="1"
-                      value={yieldWithdrawAmount}
-                      onChange={(e) => setYieldWithdrawAmount(e.target.value)}
-                      placeholder="Amount to withdraw"
-                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#E66C35]"
-                    />
-                    <button
-                      type="submit"
-                      disabled={(genericPending && activeAction === 'withdraw_yield') || !isReady || !yieldWithdrawAmount || Number(yieldWithdrawAmount) <= 0}
-                      className="w-full bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2 rounded-lg text-xs transition-colors disabled:opacity-50"
-                    >
-                      {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'withdraw_yield' ? 'Withdrawing...' : 'Reclaim Yield to Wallet'}
-                    </button>
-                  </form>
-
-                  {/* Amortize Debt */}
-                  <form onSubmit={handleAmortizeDebt} className="space-y-3 bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
-                    <div className="flex justify-between items-center text-xs font-mono text-[#77756F]">
-                      <label className="font-bold text-[#171715]">Amortize Active Debt</label>
-                      <span>Debt: {debtEth.toLocaleString()} MUSD</span>
-                    </div>
-                    <p className="text-[11px] text-[#77756F]">Apply deposited yield balance to pay down loan principal.</p>
-                    <input
-                      type="number"
-                      step="1"
-                      value={amortizeAmount}
-                      onChange={(e) => setAmortizeAmount(e.target.value)}
-                      placeholder="Amount to amortize"
-                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#258454]"
-                    />
-                    <button
-                      type="submit"
-                      disabled={(genericPending && activeAction === 'amortize') || !isReady || debtEth <= 0 || !yieldBalance || !amortizeAmount || Number(amortizeAmount) <= 0}
-                      className="w-full bg-[#258454] hover:opacity-90 disabled:opacity-50 text-white font-semibold py-2 rounded-lg text-xs transition-colors"
-                    >
-                      {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'amortize' ? 'Amortizing...' : 'Amortize Vault Debt'}
-                    </button>
-                  </form>
-                </div>
-              </div>
-
-              {/* CARD 5: KEEPER LIQUIDATION ENGINE (High Finding 3 Fix) */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl lg:col-span-2 shadow-sm space-y-6">
-                <div className="flex items-center justify-between border-b border-[#DEDBD3] pb-3">
-                  <div className="flex items-center space-x-2">
-                    <AlertTriangle className="w-5 h-5 text-[#C7473A]" />
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Keeper Liquidation Console</h3>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs font-mono bg-[#258454]/10 text-[#258454] px-3 py-1 rounded font-bold">
-                      +{effectiveKeeperBonusPercent.toFixed(1)}% Collateral Bonus ({currentTierName} Tier)
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('simulator')}
-                      className="text-xs font-mono text-[#E66C35] hover:underline flex items-center space-x-1 cursor-pointer"
-                    >
-                      <span>Open Arena</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <p className="text-xs text-[#77756F] leading-relaxed">
-                  Anyone or any automated keeper bot can liquidate positions exceeding the 75% LTV threshold. 
-                  Liquidators repay the borrower's MUSD debt and seize the underlying Bitcoin collateral at a {effectiveKeeperBonusPercent.toFixed(1)}% bonus (instant profit).
-                </p>
-
-                <div className="bg-[#F6F4EF] border border-[#DEDBD3] p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center space-x-2 text-[#77756F]">
-                    <Sliders className="w-4 h-4 text-[#E66C35]" />
-                    <span>Looking to stress test troves against simulated price crashes or trigger autonomous auto-heal?</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('simulator')}
-                    className="px-3.5 py-1.5 bg-[#171715] hover:bg-[#E66C35] text-white font-semibold rounded-lg text-xs transition-colors cursor-pointer shrink-0"
-                  >
-                    Launch Risk Simulator & Arena →
-                  </button>
-                </div>
-
-                <form onSubmit={handleLiquidate} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3]">
-                  <div className="space-y-1 md:col-span-2">
-                    <label className="text-xs font-mono text-[#77756F]">Borrower Address to Liquidate</label>
-                    <input
-                      type="text"
-                      value={liquidateUser}
-                      onChange={(e) => setLiquidateUser(e.target.value)}
-                      placeholder="0x... borrower account"
-                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2.5 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#C7473A]"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-mono text-[#77756F]">Debt to Repay (MUSD)</label>
-                    <input
-                      type="number"
-                      step="1"
-                      value={liquidateDebtAmount}
-                      onChange={(e) => setLiquidateDebtAmount(e.target.value)}
-                      placeholder="1000"
-                      className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-xl px-4 py-2.5 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#C7473A]"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2 text-xs font-mono text-[#77756F]">
-                      <input
-                        type="checkbox"
-                        id="seizeNative"
-                        checked={liquidateSeizeNative}
-                        onChange={(e) => setLiquidateSeizeNative(e.target.checked)}
-                        className="rounded"
-                      />
-                      <label htmlFor="seizeNative">Seize Native BTC</label>
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={(vaultPending && activeAction === 'liquidate') || !isReady || !liquidateUser || !liquidateDebtAmount}
-                      className="w-full bg-[#C7473A] hover:bg-red-700 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
-                    >
-                      {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'liquidate' ? 'Liquidating...' : 'Execute Liquidation'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-
-            </div>
-          </div>
+          <VaultTab
+            mounted={mounted}
+            isConnected={isConnected}
+            handleOpenConnectWallet={handleOpenConnectWallet}
+            nativeBalance={nativeBalance}
+            tbtcBalance={tbtcBalance}
+            musdBalance={musdBalance}
+            btcPriceUSD={btcPriceUSD}
+            nativeCollateralEth={nativeCollateralEth}
+            tbtcCollateralEth={tbtcCollateralEth}
+            collateralMode={collateralMode}
+            setCollateralMode={setCollateralMode}
+            collateralAmount={collateralAmount}
+            setCollateralAmount={setCollateralAmount}
+            handleApprove={handleApprove}
+            isTbtcApproved={isTbtcApproved}
+            genericPending={genericPending}
+            activeAction={activeAction}
+            isReady={isReady}
+            vaultPending={vaultPending}
+            txStatus={txStatus}
+            handleDepositCollateral={handleDepositCollateral}
+            withdrawMode={withdrawMode}
+            setWithdrawMode={setWithdrawMode}
+            withdrawAmount={withdrawAmount}
+            setWithdrawAmount={setWithdrawAmount}
+            maxWithdrawableEth={maxWithdrawableEth}
+            collateralEth={collateralEth}
+            handleWithdrawCollateral={handleWithdrawCollateral}
+            ltvStatusColor={ltvStatusColor}
+            collateralValueUSD={collateralValueUSD}
+            ltvNumeric={ltvNumeric}
+            debtEth={debtEth}
+            availableBorrowUSD={availableBorrowUSD}
+            borrowAmount={borrowAmount}
+            setBorrowAmount={setBorrowAmount}
+            handleBorrowMUSD={handleBorrowMUSD}
+            repayAmount={repayAmount}
+            setRepayAmount={setRepayAmount}
+            isVaultApproved={isVaultApproved}
+            handleRepayMUSD={handleRepayMUSD}
+            streamIdForAutoHeal={streamIdForAutoHeal}
+            setStreamIdForAutoHeal={setStreamIdForAutoHeal}
+            isAutoHealEligible={isAutoHealEligible}
+            autoHealCurrentICR={autoHealCurrentICR}
+            debtToRestoreEth={debtToRestoreEth}
+            unvestedBufferEth={unvestedBufferEth}
+            handleAutoHealTrove={handleAutoHealTrove}
+            yieldBalance={yieldBalance}
+            yieldDepositAmount={yieldDepositAmount}
+            setYieldDepositAmount={setYieldDepositAmount}
+            isCreditEngineApproved={isCreditEngineApproved}
+            handleDepositYield={handleDepositYield}
+            yieldWithdrawAmount={yieldWithdrawAmount}
+            setYieldWithdrawAmount={setYieldWithdrawAmount}
+            handleWithdrawYield={handleWithdrawYield}
+            amortizeAmount={amortizeAmount}
+            setAmortizeAmount={setAmortizeAmount}
+            handleAmortizeDebt={handleAmortizeDebt}
+            effectiveKeeperBonusPercent={effectiveKeeperBonusPercent}
+            currentTierName={currentTierName}
+            setActiveTab={setActiveTab}
+            liquidateUser={liquidateUser}
+            setLiquidateUser={setLiquidateUser}
+            liquidateDebtAmount={liquidateDebtAmount}
+            setLiquidateDebtAmount={setLiquidateDebtAmount}
+            liquidateSeizeNative={liquidateSeizeNative}
+            setLiquidateSeizeNative={setLiquidateSeizeNative}
+            handleLiquidate={handleLiquidate}
+            formatEther={formatEther}
+          />
         )}
 
         {/* TAB 3: PAYROLL STREAMER */}
         {activeTab === 'payroll' && (
-          <div className="space-y-8 animate-fadeIn">
-            {mounted && !isConnected && (
-              <div className="bg-[#FBFAF7] border border-[#E66C35]/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
-                <div className="flex items-center space-x-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-[#E66C35]/10 text-[#E66C35] flex items-center justify-center shrink-0">
-                    <Clock className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-serif-display text-lg font-bold text-[#171715]">Connect Wallet to Stream Payroll</h4>
-                    <p className="text-xs text-[#77756F]">Choose your preferred wallet to create second-by-second MUSD salary streams on Mezo.</p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleOpenConnectWallet}
-                  className="w-full sm:w-auto px-5 py-2.5 bg-[#171715] hover:bg-[#E66C35] text-white text-xs font-semibold rounded-xl transition-all shrink-0 flex items-center justify-center space-x-2 cursor-pointer"
-                >
-                  <Wallet className="w-4 h-4" />
-                  <span>Select & Connect Wallet</span>
-                </button>
-              </div>
-            )}
-            <div className="border-b border-[#DEDBD3] pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-3xl font-serif-display font-bold text-[#171715]">MUSD Payroll Streamer</h2>
-                <p className="text-xs text-[#77756F] mt-1">
-                  Second-by-second linear escrow streaming of official testnet MUSD stablecoins backed by Bitcoin.
-                </p>
-              </div>
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl text-xs font-mono">
-                <span className="text-[#77756F]">Available MUSD: </span>
-                <strong className="text-[#258454]">{mounted && musdBalance ? Number(formatEther(musdBalance as bigint)).toLocaleString() : '0'} MUSD</strong>
-              </div>
-            </div>
-
-            <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-5 rounded-2xl flex items-start space-x-3.5 text-xs font-mono shadow-sm">
-              <div className="bg-[#E66C35]/10 p-2 rounded-xl text-[#E66C35] shrink-0 mt-0.5">
-                <Clock className="w-5 h-5" />
-              </div>
-              <div className="space-y-1 flex-1">
-                <p className="font-bold text-[#171715] text-sm">How Second-by-Second Streaming Works</p>
-                <p className="text-[#77756F] leading-relaxed">
-                  When you create a stream, deposited <strong>MUSD</strong> is held in the non-custodial <strong>PayrollStreamer</strong> contract.
-                  Funds unlock smoothly second-by-second into the recipient's claimable balance. 
-                  The employee can withdraw anytime via <strong>"Claim Earned MUSD"</strong>, while the employer maintains full top-up and revocation controls with unearned refund splits.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Create Stream Form */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl flex flex-col justify-between">
-                <div>
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715] mb-2 flex items-center space-x-2">
-                    <Clock className="w-4 h-4 text-[#E66C35]" />
-                    <span>Create MUSD Salary Stream</span>
-                  </h3>
-                  <p className="text-xs text-[#77756F] mb-6">Deposit MUSD for continuous linear vesting.</p>
-                  
-                  <form onSubmit={handleCreateStream} className="space-y-4">
-                    <div>
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs font-mono text-[#77756F]">Recipient Address</label>
-                        {address && (
-                          <button
-                            type="button"
-                            onClick={() => setRecipient(address)}
-                            className="text-[11px] font-mono text-[#E66C35] hover:underline"
-                          >
-                            Use Connected Wallet
-                          </button>
-                        )}
-                      </div>
-                      <input
-                        type="text"
-                        value={recipient}
-                        onChange={(e) => setRecipient(e.target.value)}
-                        placeholder="0x... recipient address"
-                        className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-xs focus:outline-none focus:border-[#E66C35]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-mono text-[#77756F] block mb-1">Deposit Amount (MUSD)</label>
-                      <input
-                        type="number"
-                        step="1"
-                        value={streamDeposit}
-                        onChange={(e) => setStreamDeposit(e.target.value)}
-                        placeholder="1000"
-                        className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs font-mono text-[#77756F]">Duration (Seconds)</label>
-                        <div className="flex space-x-1 text-[10px] font-mono">
-                          <button
-                            type="button"
-                            onClick={() => setDuration('3600')}
-                            className="px-1.5 py-0.5 rounded bg-[#DEDBD3]/40 hover:bg-[#DEDBD3] text-[#171715]"
-                          >
-                            1h
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDuration('86400')}
-                            className="px-1.5 py-0.5 rounded bg-[#DEDBD3]/40 hover:bg-[#DEDBD3] text-[#171715]"
-                          >
-                            1d
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDuration('2592000')}
-                            className="px-1.5 py-0.5 rounded bg-[#DEDBD3]/40 hover:bg-[#DEDBD3] text-[#171715]"
-                          >
-                            30d
-                          </button>
-                        </div>
-                      </div>
-                      <input
-                        type="number"
-                        value={duration}
-                        onChange={(e) => setDuration(e.target.value)}
-                        placeholder="3600 (1 hour)"
-                        className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
-                      />
-                    </div>
-
-                    {Number(streamDeposit) > 0 && Number(duration) > 0 && (
-                      <div className="text-[11px] font-mono text-[#77756F] bg-[#F6F4EF] p-2.5 rounded-xl border border-[#DEDBD3] flex justify-between">
-                        <span>Streaming Rate:</span>
-                        <span className="text-[#171715] font-semibold">
-                          {(Number(streamDeposit) / Number(duration)).toFixed(6)} MUSD / sec
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="flex space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => handleApprove('musd', 'streamer', streamDeposit || '1000')}
-                        disabled={(genericPending && activeAction === 'approve_stream') || !isReady}
-                        className={`flex-1 font-semibold py-3 rounded-xl text-xs transition-colors ${
-                          isStreamerApproved
-                            ? 'bg-[#258454]/10 border border-[#258454]/40 text-[#258454]'
-                            : 'bg-[#E66C35] text-white animate-pulse'
-                        } disabled:opacity-50`}
-                      >
-                        {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'approve_stream'
-                          ? 'Approving...'
-                          : isStreamerApproved
-                          ? '✓ MUSD Approved'
-                          : '1. Approve MUSD'}
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={
-                          (streamerPending && activeAction === 'create_stream') ||
-                          !isReady ||
-                          !recipient ||
-                          !streamDeposit ||
-                          !duration ||
-                          !isStreamerApproved
-                        }
-                        className="flex-1 bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-3 rounded-xl text-xs transition-colors disabled:opacity-50"
-                      >
-                        {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'create_stream' ? 'Creating...' : '2. Create Stream'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-
-              {/* Stream Management */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl flex flex-col justify-between space-y-6">
-                <div>
-                  <div className="flex justify-between items-center mb-3">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Stream Management</h3>
-                    <div className="flex items-center space-x-1.5">
-                      <label className="text-xs font-mono text-[#77756F]">Stream ID:</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={streamIdToManage}
-                        onChange={(e) => setStreamIdToManage(e.target.value)}
-                        className="w-16 bg-[#F6F4EF] border border-[#DEDBD3] rounded-lg px-2 py-1 text-xs font-mono text-[#171715] focus:outline-none focus:border-[#E66C35]"
-                      />
-                    </div>
-                  </div>
-
-                  {streamExists ? (
-                    <div className="space-y-4">
-                      <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-3 font-mono text-xs">
-                        <div className="flex justify-between">
-                          <span className="text-[#77756F]">Status:</span>
-                          <span className={`font-bold ${streamIsActive ? 'text-[#258454]' : 'text-[#C7473A]'}`}>
-                            {streamIsActive ? '● Streaming (Active)' : '○ Completed / Cancelled'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#77756F]">Employer:</span>
-                          <span className="text-[#171715]">{formatAddress(streamEmployer)} {isCurrentUserEmployer ? '(You)' : ''}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#77756F]">Recipient:</span>
-                          <span className="text-[#171715]">{formatAddress(streamRecipient)} {isCurrentUserRecipient ? '(You)' : ''}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#77756F]">Total Deposited:</span>
-                          <span className="font-bold text-[#171715]">{streamDepositAmount.toLocaleString()} MUSD</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#77756F]">Claimable Now:</span>
-                          <span className="font-bold text-[#258454]">{claimableEth.toFixed(4)} MUSD</span>
-                        </div>
-
-                        {/* Progress Bar */}
-                        <div className="space-y-1 pt-1">
-                          <div className="flex justify-between text-[11px] text-[#77756F]">
-                            <span>Vesting Progress</span>
-                            <span>{streamProgressPercent}%</span>
-                          </div>
-                          <div className="w-full bg-[#DEDBD3] h-2.5 rounded-full overflow-hidden">
-                            <div className="bg-[#258454] h-full rounded-full transition-all duration-500" style={{ width: `${streamProgressPercent}%` }}></div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Wave 2: Stream-to-Debt Amortization Split Configuration */}
-                      <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-3 font-mono text-xs">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-[#171715] flex items-center space-x-1.5">
-                            <ArrowRightLeft className="w-3.5 h-3.5 text-[#E66C35]" />
-                            <span>Stream-to-Debt Amortization</span>
-                          </span>
-                          <span
-                            className={`text-[10px] px-2 py-0.5 rounded font-bold ${
-                              isSplitEnabled && currentSplitBps > 0
-                                ? 'bg-[#258454]/15 text-[#258454]'
-                                : 'bg-[#77756F]/15 text-[#77756F]'
-                            }`}
-                          >
-                            {isSplitEnabled && currentSplitBps > 0
-                              ? `${(currentSplitBps / 100).toFixed(0)}% Auto-Repay Active`
-                              : 'Split Inactive'}
-                          </span>
-                        </div>
-
-                        <p className="text-[11px] text-[#77756F] leading-relaxed">
-                          Recipients can automatically allocate up to 50% of claimed salary to amortize vault debt (theirs or their employer's), lowering liquidation risk on every paycheck.
-                        </p>
-
-                        {isCurrentUserRecipient && streamIsActive ? (
-                          <form onSubmit={handleSetStreamSplit} className="space-y-3 pt-2 border-t border-[#DEDBD3]">
-                            <div className="space-y-1">
-                              <div className="flex justify-between items-center text-[11px]">
-                                <label className="text-[#77756F]">Amortization Split %</label>
-                                <div className="flex space-x-1">
-                                  {['0', '10', '20', '30', '50'].map((p) => (
-                                    <button
-                                      key={p}
-                                      type="button"
-                                      onClick={() => setSplitPercent(p)}
-                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                        splitPercent === p ? 'bg-[#171715] text-white' : 'bg-[#DEDBD3]/50 text-[#171715]'
-                                      }`}
-                                    >
-                                      {p}%
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                              <input
-                                type="range"
-                                min="0"
-                                max="50"
-                                step="5"
-                                value={splitPercent}
-                                onChange={(e) => setSplitPercent(e.target.value)}
-                                className="w-full accent-[#E66C35] cursor-pointer"
-                              />
-                            </div>
-
-                            <div className="space-y-1">
-                              <div className="flex justify-between items-center text-[11px]">
-                                <label className="text-[#77756F]">Target Borrower Account</label>
-                                {streamEmployer && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setSplitTargetBorrower(streamEmployer)}
-                                    className="text-[#E66C35] hover:underline"
-                                  >
-                                    Use Employer ({formatAddress(streamEmployer)})
-                                  </button>
-                                )}
-                              </div>
-                              <input
-                                type="text"
-                                value={splitTargetBorrower}
-                                onChange={(e) => setSplitTargetBorrower(e.target.value)}
-                                placeholder={address ? `Default: ${formatAddress(address)} (You)` : '0x... borrower account'}
-                                className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-lg px-3 py-1.5 text-xs font-mono text-[#171715] focus:outline-none focus:border-[#E66C35]"
-                              />
-                            </div>
-
-                            <button
-                              type="submit"
-                              disabled={(streamerPending && activeAction === 'set_stream_split') || !isReady}
-                              className="w-full bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2 rounded-lg text-xs transition-colors disabled:opacity-50 cursor-pointer"
-                            >
-                              {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'set_stream_split'
-                                ? 'Configuring Split...'
-                                : `Save ${splitPercent}% Debt Amortization Split`}
-                            </button>
-                          </form>
-                        ) : (
-                          <div className="text-[11px] text-[#77756F]">
-                            {isSplitEnabled && currentSplitBps > 0 ? (
-                              <p>
-                                Current Split: <strong>{(currentSplitBps / 100).toFixed(0)}%</strong> of claim will automatically repay debt for{' '}
-                                <strong className="text-[#171715]">{formatAddress(currentSplitTarget)}</strong>.
-                              </p>
-                            ) : (
-                              <p>No debt amortization split configured for this stream.</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Recipient Claim Action */}
-                      {isCurrentUserRecipient && streamIsActive && (
-                        <div className="space-y-1.5">
-                          <button
-                            type="button"
-                            onClick={handleWithdrawStream}
-                            disabled={(streamerPending && activeAction === 'withdraw_stream') || !isReady || claimableEth <= 0}
-                            className="w-full bg-[#258454] hover:opacity-90 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'withdraw_stream'
-                              ? 'Claiming...'
-                              : isSplitEnabled && currentSplitBps > 0
-                              ? `Claim Earned MUSD (${((claimableEth * (10000 - currentSplitBps)) / 10000).toFixed(4)} Wallet + ${((claimableEth * currentSplitBps) / 10000).toFixed(4)} Debt)`
-                              : `Claim Earned MUSD (${claimableEth.toFixed(4)} Available)`}
-                          </button>
-                          {isSplitEnabled && currentSplitBps > 0 && claimableEth > 0 && (
-                            <p className="text-[10px] text-center font-mono text-[#77756F]">
-                              ✓ Automatic closed loop: {((claimableEth * currentSplitBps) / 10000).toFixed(4)} MUSD amortizes debt for {formatAddress(currentSplitTarget)} on-chain.
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Employer Top Up */}
-                      {isCurrentUserEmployer && streamIsActive && (
-                        <form onSubmit={handleTopUpStream} className="flex space-x-2">
-                          <input
-                            type="number"
-                            step="1"
-                            value={topUpAmount}
-                            onChange={(e) => setTopUpAmount(e.target.value)}
-                            placeholder="Add MUSD"
-                            className="flex-1 bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-3 py-2 text-xs font-mono text-[#171715] focus:outline-none focus:border-[#E66C35]"
-                          />
-                          <button
-                            type="submit"
-                            disabled={(streamerPending && activeAction === 'top_up_stream') || !isReady || !topUpAmount || Number(topUpAmount) <= 0}
-                            className="bg-[#171715] hover:bg-[#E66C35] text-white font-semibold px-4 py-2 rounded-xl text-xs transition-colors disabled:opacity-50"
-                          >
-                            {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'top_up_stream' ? 'Adding...' : 'Top Up'}
-                          </button>
-                        </form>
-                      )}
-
-                      {/* Cancel Stream */}
-                      {(isCurrentUserEmployer || isCurrentUserRecipient) && streamIsActive && (
-                        <button
-                          type="button"
-                          onClick={handleCancelStream}
-                          disabled={(streamerPending && activeAction === 'cancel_stream') || !isReady}
-                          className="w-full bg-[#C7473A]/10 hover:bg-[#C7473A]/20 border border-[#C7473A]/30 text-[#C7473A] font-semibold py-2 rounded-xl text-xs transition-colors"
-                        >
-                          {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'cancel_stream'
-                            ? 'Revoking...'
-                            : 'Cancel Stream (Earned to Recipient, Balance to Employer)'}
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="bg-[#F6F4EF] p-8 rounded-xl border border-[#DEDBD3] text-center space-y-2">
-                      <p className="text-xs font-mono text-[#77756F]">Stream #{streamIdToManage} not yet initialized on Mezo L2.</p>
-                      <p className="text-[11px] text-[#77756F]">Create a new stream on the left or enter an active Stream ID.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+          <PayrollTab
+            mounted={mounted}
+            isConnected={isConnected}
+            handleOpenConnectWallet={handleOpenConnectWallet}
+            musdBalance={musdBalance}
+            formatEther={formatEther}
+            recipient={recipient}
+            setRecipient={setRecipient}
+            streamDeposit={streamDeposit}
+            setStreamDeposit={setStreamDeposit}
+            duration={duration}
+            setDuration={setDuration}
+            handleCreateStream={handleCreateStream}
+            handleApprove={handleApprove}
+            isStreamerApproved={isStreamerApproved}
+            streamerPending={streamerPending}
+            genericPending={genericPending}
+            txStatus={txStatus}
+            activeAction={activeAction}
+            isReady={isReady}
+            streamIdToManage={streamIdToManage}
+            setStreamIdToManage={setStreamIdToManage}
+            streamExists={streamExists}
+            streamIsActive={streamIsActive}
+            streamEmployer={streamEmployer}
+            streamRecipient={streamRecipient}
+            isCurrentUserEmployer={isCurrentUserEmployer}
+            isCurrentUserRecipient={isCurrentUserRecipient}
+            streamDepositAmount={streamDepositAmount}
+            claimableEth={claimableEth}
+            streamProgressPercent={streamProgressPercent}
+            isSplitEnabled={isSplitEnabled}
+            currentSplitBps={currentSplitBps}
+            currentSplitTarget={currentSplitTarget}
+            splitPercent={splitPercent}
+            setSplitPercent={setSplitPercent}
+            splitTargetBorrower={splitTargetBorrower}
+            setSplitTargetBorrower={setSplitTargetBorrower}
+            handleSetStreamSplit={handleSetStreamSplit}
+            handleWithdrawStream={handleWithdrawStream}
+            topUpAmount={topUpAmount}
+            setTopUpAmount={setTopUpAmount}
+            handleTopUpStream={handleTopUpStream}
+            handleCancelStream={handleCancelStream}
+            formatAddress={formatAddress}
+            address={address}
+          />
         )}
 
-        {/* TAB 4: MEZO GOVERNANCE STAKING HUB (Wave 2 Task 2) */}
+        {/* TAB 4: MEZO STAKING BOOST */}
         {activeTab === 'staking' && (
-          <div className="space-y-8 animate-fadeIn">
-            {mounted && !isConnected && (
-              <div className="bg-[#FBFAF7] border border-[#E66C35]/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
-                <div className="flex items-center space-x-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-[#E66C35]/10 text-[#E66C35] flex items-center justify-center shrink-0">
-                    <Award className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-serif-display text-lg font-bold text-[#171715]">Connect Wallet to Stake MEZO</h4>
-                    <p className="text-xs text-[#77756F]">Connect your wallet to lock MEZO tokens, lower vault borrowing fees, and earn protocol revenue.</p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleOpenConnectWallet}
-                  className="w-full sm:w-auto px-5 py-2.5 bg-[#171715] hover:bg-[#E66C35] text-white text-xs font-semibold rounded-xl transition-all shrink-0 flex items-center justify-center space-x-2 cursor-pointer"
-                >
-                  <Wallet className="w-4 h-4" />
-                  <span>Select & Connect Wallet</span>
-                </button>
-              </div>
-            )}
-
-            {/* Header Title & Top Metrics */}
-            <div className="border-b border-[#DEDBD3] pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center space-x-2">
-                  <h2 className="text-3xl font-serif-display font-bold text-[#171715]">MEZO Governance Staking Boost</h2>
-                  <span className="text-[10px] font-mono bg-[#E66C35]/15 text-[#E66C35] px-2 py-0.5 rounded-full font-bold">
-                    Dual-Token Utility
-                  </span>
-                </div>
-                <p className="text-xs text-[#77756F] mt-1">
-                  Lock official MEZO tokens to slash vault borrow fees up to 50%, boost keeper liquidation bonuses, and claim pro-rata MUSD dividends.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-xs font-mono">
-                <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
-                  <span className="text-[#77756F]">Wallet MEZO: </span>
-                  <strong className="text-[#171715]">{mounted ? mezoBalanceEth.toFixed(2) : '0.00'}</strong>
-                </div>
-                <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
-                  <span className="text-[#77756F]">Your Staked: </span>
-                  <strong className="text-[#E66C35]">{mounted ? userStakedMezo.toFixed(2) : '0.00'}</strong>
-                </div>
-                <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3.5 py-2 rounded-xl">
-                  <span className="text-[#77756F]">Total Staked: </span>
-                  <strong className="text-[#258454]">{mounted ? totalStakedMezo.toFixed(2) : '0.00'}</strong>
-                </div>
-              </div>
-            </div>
-
-            {/* User Tier Status Hero Card */}
-            <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-6 rounded-2xl shadow-sm space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center space-x-3">
-                  <div
-                    className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg ${
-                      currentTierName === 'Gold'
-                        ? 'bg-amber-500/15 text-amber-700 border border-amber-500/30'
-                        : currentTierName === 'Silver'
-                        ? 'bg-slate-400/20 text-slate-800 border border-slate-400/30'
-                        : currentTierName === 'Bronze'
-                        ? 'bg-orange-600/15 text-orange-700 border border-orange-600/30'
-                        : 'bg-[#171715]/10 text-[#171715] border border-[#171715]/20'
-                    }`}
-                  >
-                    <Award className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-mono uppercase tracking-wider text-[#77756F]">Active Staking Tier</span>
-                      <span
-                        className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
-                          currentTierName === 'Gold'
-                            ? 'bg-amber-500/20 text-amber-700'
-                            : currentTierName === 'Silver'
-                            ? 'bg-slate-400/25 text-slate-800'
-                            : currentTierName === 'Bronze'
-                            ? 'bg-orange-600/20 text-orange-700'
-                            : 'bg-neutral-200 text-neutral-700'
-                        }`}
-                      >
-                        {currentTierName} Tier
-                      </span>
-                    </div>
-                    <h3 className="text-xl font-serif-display font-bold text-[#171715]">
-                      {currentTierName === 'Gold'
-                        ? 'Gold Member (Max 50% Borrow Discount + 2.5% Keeper Boost)'
-                        : currentTierName === 'Silver'
-                        ? 'Silver Member (30% Borrow Discount + 1.0% Keeper Boost)'
-                        : currentTierName === 'Bronze'
-                        ? 'Bronze Member (15% Vault Borrowing Discount)'
-                        : 'Standard Tier (Stake MEZO to Unlock Fee Discounts)'}
-                    </h3>
-                  </div>
-                </div>
-
-                <div className="text-right text-xs font-mono">
-                  <span className="text-[#77756F] block">Next Tier Target:</span>
-                  <strong className="text-[#171715]">
-                    {userStakedMezo < 100
-                      ? `${(100 - userStakedMezo).toFixed(0)} MEZO to Bronze`
-                      : userStakedMezo < 500
-                      ? `${(500 - userStakedMezo).toFixed(0)} MEZO to Silver`
-                      : userStakedMezo < 2500
-                      ? `${(2500 - userStakedMezo).toFixed(0)} MEZO to Gold`
-                      : 'Max Tier Achieved'}
-                  </strong>
-                </div>
-              </div>
-
-              {/* Tier Progress Bar */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px] font-mono text-[#77756F]">
-                  <span>Tier Progression</span>
-                  <span>{userStakedMezo.toFixed(0)} / 2,500 MEZO</span>
-                </div>
-                <div className="w-full bg-[#DEDBD3] h-2.5 rounded-full overflow-hidden">
-                  <div
-                    className="bg-[#E66C35] h-full rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, Math.round((userStakedMezo / 2500) * 100))}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* 3 Active Benefit Metrics */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1 font-mono">
-                  <span className="text-xs text-[#77756F]">Borrow Fee Discount</span>
-                  <div className="text-xl font-bold text-[#258454]">{feeDiscountPercent.toFixed(1)}% OFF</div>
-                  <span className="text-[11px] text-[#77756F] block">Deducted from base 0.50% vault fee</span>
-                </div>
-
-                <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1 font-mono">
-                  <span className="text-xs text-[#77756F]">Keeper Bonus Boost</span>
-                  <div className="text-xl font-bold text-[#E66C35]">+{keeperBoostPercent.toFixed(1)}% EXTRA</div>
-                  <span className="text-[11px] text-[#77756F] block">Total {5 + keeperBoostPercent}% liquidation profit</span>
-                </div>
-
-                <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1 font-mono">
-                  <span className="text-xs text-[#77756F]">Accrued MUSD Dividends</span>
-                  <div className="text-xl font-bold text-[#171715]">{earnedRewardsEth.toFixed(4)} MUSD</div>
-                  <span className="text-[11px] text-[#77756F] block">Pro-rata share of vault origination fees</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Interactive 2-Column Console */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
-              {/* COLUMN 1: STAKE / UNSTAKE ACTIONS */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl shadow-sm space-y-6">
-                <div className="flex items-center justify-between border-b border-[#DEDBD3] pb-3">
-                  <div className="flex items-center space-x-2">
-                    <Zap className="w-5 h-5 text-[#E66C35]" />
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">Staking Console</h3>
-                  </div>
-                  <div className="flex space-x-1 bg-[#DEDBD3]/40 p-1 rounded-lg text-xs font-mono">
-                    <button
-                      type="button"
-                      onClick={() => setStakingTab('stake')}
-                      className={`px-3 py-1 rounded text-xs font-bold transition-all ${
-                        stakingTab === 'stake' ? 'bg-[#171715] text-white shadow-xs' : 'text-[#77756F] hover:text-[#171715]'
-                      }`}
-                    >
-                      Stake
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStakingTab('unstake')}
-                      className={`px-3 py-1 rounded text-xs font-bold transition-all ${
-                        stakingTab === 'unstake' ? 'bg-[#171715] text-white shadow-xs' : 'text-[#77756F] hover:text-[#171715]'
-                      }`}
-                    >
-                      Unstake (Cooldown)
-                    </button>
-                  </div>
-                </div>
-
-                {stakingTab === 'stake' ? (
-                  <form onSubmit={handleStakeMEZO} className="space-y-4">
-                    <div className="flex justify-between items-center text-xs font-mono">
-                      <label className="font-bold text-[#171715]">Amount of MEZO to Stake</label>
-                      <span className="text-[#77756F]">Available: {mezoBalanceEth.toFixed(2)} MEZO</span>
-                    </div>
-
-                    <input
-                      type="number"
-                      step="1"
-                      value={mezoStakeAmount}
-                      onChange={(e) => setMezoStakeAmount(e.target.value)}
-                      placeholder="e.g. 500 MEZO for Silver Tier"
-                      className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
-                    />
-
-                    {/* Quick Preset Buttons */}
-                    <div className="flex space-x-2 text-xs font-mono">
-                      {[
-                        { label: '100 (Bronze)', val: '100' },
-                        { label: '500 (Silver)', val: '500' },
-                        { label: '2,500 (Gold)', val: '2500' },
-                        { label: 'Max', val: mezoBalanceEth.toString() },
-                      ].map((preset) => (
-                        <button
-                          key={preset.label}
-                          type="button"
-                          onClick={() => setMezoStakeAmount(preset.val)}
-                          className="flex-1 bg-[#F6F4EF] hover:bg-[#DEDBD3] border border-[#DEDBD3] py-1.5 rounded-lg text-[11px] font-semibold text-[#171715] transition-colors"
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="flex space-x-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => handleApprove('mezo', 'stakingBoost', mezoStakeAmount || '500')}
-                        disabled={(genericPending && activeAction === 'approve_mezo') || !isReady}
-                        className={`flex-1 font-semibold py-3 rounded-xl text-xs transition-colors ${
-                          isMezoApproved
-                            ? 'bg-[#258454]/10 border border-[#258454]/40 text-[#258454]'
-                            : 'bg-[#E66C35] text-white animate-pulse'
-                        } disabled:opacity-50`}
-                      >
-                        {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'approve_mezo'
-                          ? 'Approving...'
-                          : isMezoApproved
-                          ? '✓ MEZO Approved'
-                          : '1. Approve MEZO'}
-                      </button>
-
-                      <button
-                        type="submit"
-                        disabled={
-                          (genericPending && activeAction === 'stake_mezo') ||
-                          !isReady ||
-                          !mezoStakeAmount ||
-                          Number(mezoStakeAmount) <= 0 ||
-                          !isMezoApproved
-                        }
-                        className="flex-1 bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-3 rounded-xl text-xs transition-colors disabled:opacity-50 cursor-pointer"
-                      >
-                        {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'stake_mezo'
-                          ? 'Staking...'
-                          : '2. Stake MEZO'}
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <div className="space-y-4">
-                    <form onSubmit={handleInitiateUnstake} className="space-y-4">
-                      <div className="flex justify-between items-center text-xs font-mono">
-                        <label className="font-bold text-[#171715]">Amount of MEZO to Unstake</label>
-                        <span className="text-[#77756F]">Staked: {userStakedMezo.toFixed(2)} MEZO</span>
-                      </div>
-
-                      <input
-                        type="number"
-                        step="1"
-                        value={mezoUnstakeAmount}
-                        onChange={(e) => setMezoUnstakeAmount(e.target.value)}
-                        placeholder="Amount to unbond"
-                        className="w-full bg-[#F6F4EF] border border-[#DEDBD3] rounded-xl px-4 py-3 text-[#171715] font-mono text-sm focus:outline-none focus:border-[#E66C35]"
-                      />
-
-                      <p className="text-[11px] font-mono text-[#77756F] leading-relaxed">
-                        Notice: Unstaking triggers a <strong>2-day cooldown period</strong> to protect protocol stability. 
-                        Funds in cooldown no longer earn fee discounts or revenue share.
-                      </p>
-
-                      <button
-                        type="submit"
-                        disabled={
-                          (genericPending && activeAction === 'initiate_unstake') ||
-                          !isReady ||
-                          !mezoUnstakeAmount ||
-                          Number(mezoUnstakeAmount) <= 0 ||
-                          userStakedMezo < Number(mezoUnstakeAmount) ||
-                          unbondingAmountEth > 0
-                        }
-                        className="w-full bg-[#171715] hover:bg-[#C7473A] text-white font-semibold py-3 rounded-xl text-xs transition-colors disabled:opacity-50 cursor-pointer"
-                      >
-                        {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'initiate_unstake'
-                          ? 'Initiating...'
-                          : 'Initiate Unstake (Start 2-Day Cooldown)'}
-                      </button>
-                    </form>
-
-                    {/* Pending Unbonding Status Box */}
-                    {unbondingAmountEth > 0 && (
-                      <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-3 font-mono text-xs">
-                        <div className="flex justify-between items-center">
-                          <span className="font-bold text-[#171715]">Pending Unbonding Request</span>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isUnbondingReady ? 'bg-[#258454]/15 text-[#258454]' : 'bg-[#E66C35]/15 text-[#E66C35]'}`}>
-                            {isUnbondingReady ? 'Ready to Claim' : 'In Cooldown'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#77756F]">Unbonding Amount:</span>
-                          <strong>{unbondingAmountEth.toFixed(2)} MEZO</strong>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#77756F]">Release Date:</span>
-                          <span>{new Date(unbondingReleaseTime * 1000).toLocaleString()}</span>
-                        </div>
-
-                        <div className="flex space-x-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={handleClaimUnstaked}
-                            disabled={(genericPending && activeAction === 'claim_unstaked') || !isReady || !isUnbondingReady}
-                            className="flex-1 bg-[#258454] hover:opacity-90 text-white font-semibold py-2 rounded-lg text-xs transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'claim_unstaked'
-                              ? 'Claiming...'
-                              : 'Claim to Wallet'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleCancelUnstake}
-                            disabled={(genericPending && activeAction === 'cancel_unstake') || !isReady}
-                            className="flex-1 bg-[#DEDBD3] hover:bg-[#FBFAF7] text-[#171715] font-semibold py-2 rounded-lg text-xs transition-colors cursor-pointer"
-                          >
-                            {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'cancel_unstake'
-                              ? 'Restaking...'
-                              : 'Cancel & Restake'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* COLUMN 2: REAL YIELD MUSD DIVIDENDS */}
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl shadow-sm flex flex-col justify-between space-y-6">
-                <div>
-                  <div className="flex items-center justify-between border-b border-[#DEDBD3] pb-3">
-                    <div className="flex items-center space-x-2">
-                      <DollarSign className="w-5 h-5 text-[#258454]" />
-                      <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">MUSD Protocol Dividends</h3>
-                    </div>
-                    <span className="text-[10px] font-mono bg-[#258454]/15 text-[#258454] px-2 py-0.5 rounded font-bold">
-                      Real Yield
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-[#77756F] leading-relaxed mt-4">
-                    Borrowing fees collected across all active MezoFlow Vault positions are channelled directly into the staking reward accumulator. 
-                    MEZO stakers earn non-inflationary MUSD stablecoins backed by Bitcoin without token dilution.
-                  </p>
-
-                  <div className="bg-[#F6F4EF] p-6 rounded-xl border border-[#DEDBD3] my-6 text-center space-y-2">
-                    <span className="text-xs font-mono text-[#77756F] uppercase tracking-wider">Your Claimable Revenue Share</span>
-                    <div className="text-4xl font-mono font-bold text-[#258454]">
-                      {earnedRewardsEth.toFixed(4)} <span className="text-lg">MUSD</span>
-                    </div>
-                    <p className="text-[11px] font-mono text-[#77756F]">
-                      Accrued from vault loan origination fees on Mezo L2
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleClaimStakingRewards}
-                  disabled={(genericPending && activeAction === 'claim_staking_rewards') || !isReady || earnedRewardsEth <= 0}
-                  className="w-full bg-[#258454] hover:opacity-90 text-white font-semibold py-3.5 rounded-xl text-xs transition-all disabled:opacity-50 shadow-sm cursor-pointer"
-                >
-                  {(genericPending || txStatus === 'wallet_confirm') && activeAction === 'claim_staking_rewards'
-                    ? 'Claiming Dividends...'
-                    : `Claim ${earnedRewardsEth.toFixed(4)} MUSD Dividends`}
-                </button>
-              </div>
-
-            </div>
-
-            {/* FULL WIDTH: TIER PERKS COMPARISON MATRIX */}
-            <div className="bg-[#FBFAF7] border border-[#DEDBD3] rounded-2xl p-7 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715] flex items-center space-x-2">
-                <Layers className="w-4 h-4 text-[#E66C35]" />
-                <span>MEZO Staking Tier Matrix & Protocol Privileges</span>
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead className="bg-[#F6F4EF] border-b border-[#DEDBD3] text-[#77756F]">
-                    <tr>
-                      <th className="py-3 px-4">Tier</th>
-                      <th className="py-3 px-4">MEZO Required</th>
-                      <th className="py-3 px-4">Borrow Fee Discount</th>
-                      <th className="py-3 px-4">Effective Vault Fee</th>
-                      <th className="py-3 px-4">Keeper Liquidation Bonus</th>
-                      <th className="py-3 px-4">Stream Cancellation Penalty</th>
-                      <th className="py-3 px-4 text-right">Dividend Share</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#DEDBD3]">
-                    <tr className={currentTierName === 'Standard' ? 'bg-[#E66C35]/5 font-bold' : ''}>
-                      <td className="py-3.5 px-4">Standard</td>
-                      <td className="py-3.5 px-4">0 MEZO</td>
-                      <td className="py-3.5 px-4 text-[#77756F]">0%</td>
-                      <td className="py-3.5 px-4">0.50%</td>
-                      <td className="py-3.5 px-4">5.0% (Standard)</td>
-                      <td className="py-3.5 px-4">Standard Escrow Rules</td>
-                      <td className="py-3.5 px-4 text-right">None</td>
-                    </tr>
-                    <tr className={currentTierName === 'Bronze' ? 'bg-[#E66C35]/5 font-bold' : ''}>
-                      <td className="py-3.5 px-4 flex items-center space-x-1.5">
-                        <span className="w-2 h-2 rounded-full bg-orange-600" />
-                        <span>Bronze</span>
-                      </td>
-                      <td className="py-3.5 px-4">100 MEZO</td>
-                      <td className="py-3.5 px-4 text-[#258454]">15% Discount</td>
-                      <td className="py-3.5 px-4">0.425%</td>
-                      <td className="py-3.5 px-4">5.0%</td>
-                      <td className="py-3.5 px-4">Standard Escrow Rules</td>
-                      <td className="py-3.5 px-4 text-right text-[#258454]">Pro-Rata</td>
-                    </tr>
-                    <tr className={currentTierName === 'Silver' ? 'bg-[#E66C35]/5 font-bold' : ''}>
-                      <td className="py-3.5 px-4 flex items-center space-x-1.5">
-                        <span className="w-2 h-2 rounded-full bg-slate-400" />
-                        <span>Silver</span>
-                      </td>
-                      <td className="py-3.5 px-4">500 MEZO</td>
-                      <td className="py-3.5 px-4 text-[#258454]">30% Discount</td>
-                      <td className="py-3.5 px-4">0.350%</td>
-                      <td className="py-3.5 px-4 text-[#E66C35]">6.0% (+1.0% Boost)</td>
-                      <td className="py-3.5 px-4">Standard Escrow Rules</td>
-                      <td className="py-3.5 px-4 text-right text-[#258454]">Pro-Rata</td>
-                    </tr>
-                    <tr className={currentTierName === 'Gold' ? 'bg-[#E66C35]/5 font-bold' : ''}>
-                      <td className="py-3.5 px-4 flex items-center space-x-1.5">
-                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                        <span className="text-amber-700">Gold</span>
-                      </td>
-                      <td className="py-3.5 px-4 text-amber-700 font-bold">2,500 MEZO</td>
-                      <td className="py-3.5 px-4 text-[#258454] font-bold">50% Max Discount</td>
-                      <td className="py-3.5 px-4 font-bold">0.250%</td>
-                      <td className="py-3.5 px-4 text-[#E66C35] font-bold">7.5% (+2.5% Boost)</td>
-                      <td className="py-3.5 px-4 text-[#258454] font-bold">Zero Cancellation Fee</td>
-                      <td className="py-3.5 px-4 text-right text-[#258454] font-bold">Max Pro-Rata Weight</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+          <StakingTab
+            mounted={mounted}
+            isConnected={isConnected}
+            handleOpenConnectWallet={handleOpenConnectWallet}
+            mezoBalanceEth={mezoBalanceEth}
+            userStakedMezo={userStakedMezo}
+            totalStakedMezo={totalStakedMezo}
+            currentTierName={currentTierName}
+            feeDiscountPercent={feeDiscountPercent}
+            keeperBoostPercent={keeperBoostPercent}
+            earnedRewardsEth={earnedRewardsEth}
+            stakingTab={stakingTab}
+            setStakingTab={setStakingTab}
+            mezoStakeAmount={mezoStakeAmount}
+            setMezoStakeAmount={setMezoStakeAmount}
+            mezoUnstakeAmount={mezoUnstakeAmount}
+            setMezoUnstakeAmount={setMezoUnstakeAmount}
+            handleApprove={handleApprove}
+            handleStakeMEZO={handleStakeMEZO}
+            handleInitiateUnstake={handleInitiateUnstake}
+            handleClaimUnstaked={handleClaimUnstaked}
+            handleCancelUnstake={handleCancelUnstake}
+            handleClaimStakingRewards={handleClaimStakingRewards}
+            isMezoApproved={isMezoApproved}
+            genericPending={genericPending}
+            txStatus={txStatus}
+            activeAction={activeAction}
+            isReady={isReady}
+            unbondingAmountEth={unbondingAmountEth}
+            isUnbondingReady={isUnbondingReady}
+            unbondingReleaseTime={unbondingReleaseTime}
+          />
         )}
 
-        {/* TAB 5: INTERACTIVE RISK SIMULATOR & KEEPER ARENA (Wave 2 Grand Feature) */}
+        {/* TAB 5: RISK SIMULATOR & KEEPER ARENA */}
         {activeTab === 'simulator' && (
-          <div className="space-y-10 animate-fadeIn">
-            {/* Header */}
-            <div className="border-b border-[#DEDBD3] pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-mono uppercase text-[#E66C35] tracking-widest font-semibold flex items-center space-x-1.5">
-                  <Flame className="w-3.5 h-3.5 text-[#E66C35]" />
-                  <span>Wave 2 Protocol Mechanics</span>
-                </p>
-                <h2 className="text-3xl font-serif-display font-bold text-[#171715] mt-1">
-                  Market Shock Simulator & Public Keeper Arena
-                </h2>
-                <p className="text-xs text-[#77756F] mt-1">
-                  Stress-test troves against volatile Bitcoin price swings, observe autonomous Self-Healing buffer intervention, and claim keeper bounties with tier-boosted liquidation payouts.
-                </p>
-              </div>
-
-              {/* Status Pills */}
-              <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono">
-                <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3 py-1.5 rounded-xl flex items-center space-x-1.5">
-                  <span className="text-[#77756F]">Oracle BTC:</span>
-                  <strong className="text-[#171715]">${baseBtcPrice.toLocaleString()}</strong>
-                </div>
-                <div className="bg-[#FBFAF7] border border-[#DEDBD3] px-3 py-1.5 rounded-xl flex items-center space-x-1.5">
-                  <span className="text-[#77756F]">Keeper Tier:</span>
-                  <span className="text-[#E66C35] font-bold">{currentTierName} ({effectiveKeeperBonusPercent.toFixed(1)}% Bounty)</span>
-                </div>
-                <div className="bg-[#FBFAF7] border border-[#258454]/30 px-3 py-1.5 rounded-xl flex items-center space-x-1.5 text-[#258454]">
-                  <Award className="w-3.5 h-3.5" />
-                  <span>Keeper Profit: <strong>${keeperEarningsUSD.toFixed(0)} MUSD</strong></span>
-                </div>
-              </div>
-            </div>
-
-            {/* Notification Toast if Auto-Heal was triggered in simulation */}
-            {simHealToast && (
-              <div className="bg-[#258454]/10 border border-[#258454]/40 p-4 rounded-2xl flex items-center justify-between gap-4 shadow-sm animate-fadeIn">
-                <div className="flex items-center space-x-3 text-xs font-mono text-[#258454]">
-                  <Sparkles className="w-5 h-5 shrink-0" />
-                  <span>{simHealToast}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSimHealToast(null)}
-                  className="text-[#258454] hover:text-[#171715] text-xs font-mono cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-
-            {/* PART 1: INTERACTIVE MARKET SHOCK & TROVE RISK SIMULATOR */}
-            <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl shadow-sm space-y-7">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#DEDBD3] pb-4 gap-3">
-                <div className="flex items-center space-x-2.5">
-                  <Sliders className="w-5 h-5 text-[#E66C35]" />
-                  <div>
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">
-                      1. Interactive Market Shock & Trove Stress-Test Engine
-                    </h3>
-                    <p className="text-xs text-[#77756F]">
-                      Simulate BTC price shocks (-50% to +50%) to observe live Trove ICR recalculations and autonomous Self-Healing thresholds.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={handleResetSim}
-                    className="px-3 py-1.5 bg-[#F6F4EF] hover:bg-[#DEDBD3] text-[#171715] text-xs font-mono rounded-lg transition-colors flex items-center space-x-1 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-[#77756F]" />
-                    <span>Reset (0%)</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Preset Selector */}
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-[#77756F]">
-                  <span>Select Trove Scenario to Stress-Test:</span>
-                  <span>Currently Simulating: <strong className="text-[#171715]">{activeSimCollateral.toFixed(2)} BTC</strong> collateral / <strong className="text-[#171715]">${activeSimDebt.toLocaleString()} MUSD</strong> debt</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {[
-                    { id: 'borrower1', label: 'Mezo Testnet Borrower #1', col: '0.05 tBTC', debt: '$1,790' },
-                    { id: 'vaultTrove', label: 'MezoFlow Composed Trove', col: '0.05 BTC', debt: '$1,800' },
-                    { id: 'wallet', label: isConnected && collateralEth > 0 ? 'My Connected Trove' : 'Connected Wallet', col: isConnected && collateralEth > 0 ? `${collateralEth.toFixed(2)} BTC` : 'Live', debt: isConnected && debtEth > 0 ? `$${debtEth.toLocaleString()}` : 'Live' },
-                    { id: 'custom', label: 'Stress-Test Simulation', col: '0.10 BTC', debt: '$3,500' },
-                  ].map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => applySimPreset(p.id as any)}
-                      className={`p-3 rounded-xl border text-left text-xs transition-all cursor-pointer ${
-                        simTrovePreset === p.id
-                          ? 'bg-[#171715] text-white border-[#171715] shadow-sm'
-                          : 'bg-[#F6F4EF] hover:bg-[#FBFAF7] text-[#171715] border-[#DEDBD3]'
-                      }`}
-                    >
-                      <div className="font-bold truncate">{p.label}</div>
-                      <div className={`text-[11px] font-mono mt-0.5 ${simTrovePreset === p.id ? 'text-[#DEDBD3]' : 'text-[#77756F]'}`}>
-                        {p.col} · {p.debt}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Price Shock Slider Controls */}
-              <div className="bg-[#F6F4EF] p-6 rounded-2xl border border-[#DEDBD3] space-y-5">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-mono uppercase tracking-wider text-[#77756F] font-bold">
-                      Bitcoin Market Price Shock
-                    </span>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-2xl font-serif-display font-bold text-[#171715]">
-                        ${simBtcPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                      </span>
-                      <span
-                        className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full ${
-                          simBtcShockPercent > 0
-                            ? 'bg-[#258454]/15 text-[#258454]'
-                            : simBtcShockPercent < 0
-                            ? 'bg-[#C7473A]/15 text-[#C7473A]'
-                            : 'bg-[#77756F]/15 text-[#77756F]'
-                        }`}
-                      >
-                        {simBtcShockPercent > 0 ? `+${simBtcShockPercent}%` : `${simBtcShockPercent}%`}
-                      </span>
-                      <span className="text-xs font-mono text-[#77756F]">
-                        (Baseline: ${baseBtcPrice.toLocaleString()})
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Quick Preset Buttons */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { label: '⚡ Flash Crash (-35%)', val: -35 },
-                      { label: '⚠️ Stress (-20%)', val: -20 },
-                      { label: '● Baseline (0%)', val: 0 },
-                      { label: '🚀 Rally (+25%)', val: 25 },
-                    ].map((btn) => (
-                      <button
-                        key={btn.label}
-                        type="button"
-                        onClick={() => {
-                          setSimBtcShockPercent(btn.val);
-                          setSimHealedState(false);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer ${
-                          simBtcShockPercent === btn.val
-                            ? 'bg-[#171715] text-white font-bold'
-                            : 'bg-[#FBFAF7] hover:bg-[#DEDBD3] border border-[#DEDBD3] text-[#171715]'
-                        }`}
-                      >
-                        {btn.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Range Slider */}
-                <div className="space-y-2">
-                  <input
-                    type="range"
-                    min="-50"
-                    max="50"
-                    step="1"
-                    value={simBtcShockPercent}
-                    onChange={(e) => {
-                      setSimBtcShockPercent(Number(e.target.value));
-                      setSimHealedState(false);
-                    }}
-                    className="w-full h-2.5 bg-[#DEDBD3] rounded-lg appearance-none cursor-pointer accent-[#E66C35]"
-                  />
-                  <div className="flex justify-between text-[11px] font-mono text-[#77756F]">
-                    <span className="text-[#C7473A]">-50% ($38k Crash)</span>
-                    <span className="text-[#C7473A]">-35% Danger</span>
-                    <span className="text-[#E66C35]">-15% Auto-Heal Trigger</span>
-                    <span className="text-[#171715] font-bold">0% Real Price</span>
-                    <span className="text-[#258454]">+25% Bull</span>
-                    <span className="text-[#258454]">+50% ATH</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Dynamic Health Meters Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Metric 1: Collateral Valuation */}
-                <div className="bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3] space-y-1">
-                  <span className="text-xs font-mono text-[#77756F]">Simulated Collateral Value</span>
-                  <div className="text-2xl font-serif-display font-bold text-[#171715]">
-                    ${simCollateralUSD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                  </div>
-                  <span className="text-[11px] font-mono text-[#77756F] block">
-                    Backed by {activeSimCollateral.toFixed(4)} BTC
-                  </span>
-                </div>
-
-                {/* Metric 2: Trove Debt */}
-                <div className="bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3] space-y-1">
-                  <span className="text-xs font-mono text-[#77756F]">Active MUSD Loan Principal</span>
-                  <div className={`text-2xl font-serif-display font-bold ${simHealedState ? 'text-[#258454]' : 'text-[#171715]'}`}>
-                    ${activeSimDebt.toLocaleString(undefined, { maximumFractionDigits: 0 })} MUSD
-                  </div>
-                  <span className="text-[11px] font-mono text-[#77756F] block">
-                    {simHealedState ? '✓ Auto-heal debt reduced' : 'Mezo Trove borrowed debt'}
-                  </span>
-                </div>
-
-                {/* Metric 3: LTV Gauge */}
-                <div className="bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3] space-y-2">
-                  <div className="flex justify-between items-center text-xs font-mono">
-                    <span className="text-[#77756F]">Simulated LTV</span>
-                    <strong className={simLtv > 75 ? 'text-[#C7473A]' : simLtv > 60 ? 'text-[#E66C35]' : 'text-[#258454]'}>
-                      {simLtv.toFixed(1)}%
-                    </strong>
-                  </div>
-                  <div className="w-full bg-[#DEDBD3] h-2 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full transition-all duration-300 ${
-                        simLtv > 75 ? 'bg-[#C7473A]' : simLtv > 60 ? 'bg-[#E66C35]' : 'bg-[#258454]'
-                      }`}
-                      style={{ width: `${Math.min(100, simLtv)}%` }}
-                    />
-                  </div>
-                  <span className="text-[11px] font-mono text-[#77756F] block">
-                    Max LTV: 60% · Liquidation: 75%
-                  </span>
-                </div>
-
-                {/* Metric 4: Trove ICR Gauge */}
-                <div className="bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3] space-y-1">
-                  <span className="text-xs font-mono text-[#77756F]">Individual ICR Health</span>
-                  <div
-                    className={`text-2xl font-serif-display font-bold ${
-                      simZone === 'safe'
-                        ? 'text-[#258454]'
-                        : simZone === 'warning'
-                        ? 'text-[#E66C35]'
-                        : 'text-[#C7473A]'
-                    }`}
-                  >
-                    {simIcr > 900 ? '>900%' : `${simIcr.toFixed(1)}%`}
-                  </div>
-                  <div className="flex items-center space-x-1.5">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        simZone === 'safe'
-                          ? 'bg-[#258454]'
-                          : simZone === 'warning'
-                          ? 'bg-[#E66C35] animate-pulse'
-                          : 'bg-[#C7473A] animate-ping'
-                      }`}
-                    />
-                    <span className="text-[11px] font-mono font-bold capitalize text-[#171715]">
-                      {simZone === 'safe' ? 'Safe Zone (>150%)' : simZone === 'warning' ? 'Auto-Heal Armed (135-150%)' : 'Liquidatable Danger (<133%)'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Dynamic Status Banner & Auto-Heal Action Console */}
-              <div
-                className={`p-5 rounded-2xl border transition-all ${
-                  simZone === 'safe'
-                    ? 'bg-[#258454]/5 border-[#258454]/30'
-                    : simZone === 'warning'
-                    ? 'bg-[#E66C35]/10 border-[#E66C35]/40'
-                    : 'bg-[#C7473A]/10 border-[#C7473A]/40'
-                }`}
-              >
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1 max-w-2xl">
-                    <div className="flex items-center space-x-2">
-                      {simZone === 'safe' ? (
-                        <CheckCircle2 className="w-5 h-5 text-[#258454]" />
-                      ) : simZone === 'warning' ? (
-                        <Shield className="w-5 h-5 text-[#E66C35] animate-pulse" />
-                      ) : (
-                        <AlertTriangle className="w-5 h-5 text-[#C7473A] animate-bounce" />
-                      )}
-                      <h4 className="font-bold text-sm text-[#171715]">
-                        {simZone === 'safe'
-                          ? 'Trove Health Factor Optimal — No Intervention Required'
-                          : simZone === 'warning'
-                          ? `Self-Healing Trove Armed: Deficit of $${actualHealAmount.toFixed(0)} MUSD Detected`
-                          : `CRITICAL ALERT: Trove ICR Dropped to ${simIcr.toFixed(1)}% — Vulnerable to Keeper Liquidation!`}
-                      </h4>
-                    </div>
-
-                    <p className="text-xs text-[#77756F] leading-relaxed">
-                      {simZone === 'safe'
-                        ? `The collateralization ratio is comfortably above the 150% threshold. The linked unvested escrow buffer of $${activeSimEscrow.toLocaleString()} MUSD remains untouched in payroll.`
-                        : simZone === 'warning'
-                        ? `Under this market drop, ICR is below 150%. The autonomous autoHealTrove contract hook will draw $${actualHealAmount.toFixed(0)} MUSD from unvested escrow to pay down debt, bringing ICR back to 160% without touching employee vested pay.`
-                        : `The position has exceeded the 75% LTV limit (ICR < 133%). Public keepers can now liquidate this trove and claim a ${effectiveKeeperBonusPercent.toFixed(1)}% collateral bonus unless auto-heal immediately reclaims debt.`}
-                    </p>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex flex-col sm:flex-row gap-2 shrink-0">
-                    {simZone !== 'safe' && !simHealedState && (
-                      <button
-                        type="button"
-                        onClick={handleSimulateAutoHeal}
-                        className="px-5 py-2.5 bg-[#258454] hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition-all flex items-center justify-center space-x-2 cursor-pointer animate-pulse"
-                      >
-                        <Sparkles className="w-4 h-4" />
-                        <span>Simulate Auto-Heal Recovery</span>
-                      </button>
-                    )}
-                    {simHealedState && (
-                      <div className="px-4 py-2 bg-[#258454]/15 border border-[#258454]/30 text-[#258454] text-xs font-mono font-bold rounded-xl flex items-center space-x-1.5">
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>Healed: Target 160% ICR Restored</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* PART 2: PUBLIC KEEPER LIQUIDATION ARENA */}
-            <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl shadow-sm space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#DEDBD3] pb-4 gap-3">
-                <div className="flex items-center space-x-2.5">
-                  <Crosshair className="w-5 h-5 text-[#C7473A]" />
-                  <div>
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">
-                      2. Public Keeper Liquidation Arena & Bounty Rankings
-                    </h3>
-                    <p className="text-xs text-[#77756F]">
-                      Open Trove positions on Mezo. Keepers repay debt on positions exceeding 75% LTV and seize Bitcoin collateral at an instant discount.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Staker Tier Keeper Advantage Callout */}
-                <div className="bg-[#E66C35]/10 border border-[#E66C35]/30 px-3.5 py-2 rounded-xl text-xs font-mono">
-                  <span className="text-[#77756F]">Your Active Keeper Bonus: </span>
-                  <strong className="text-[#E66C35]">+{effectiveKeeperBonusPercent.toFixed(1)}% Payout</strong>
-                  {currentTierName !== 'Gold' && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('staking')}
-                      className="ml-2 underline text-[#171715] hover:text-[#E66C35] cursor-pointer"
-                    >
-                      (Stake MEZO for +7.5% →)
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Keeper Controls & Filter */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
-                <div className="flex items-center space-x-2">
-                  <span className="text-[#77756F]">Filter Positions:</span>
-                  {(['all', 'liquidatable', 'safe'] as const).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => setKeeperFilter(f)}
-                      className={`px-3 py-1 rounded-lg capitalize transition-colors cursor-pointer ${
-                        keeperFilter === f
-                          ? 'bg-[#171715] text-white font-bold'
-                          : 'bg-[#F6F4EF] hover:bg-[#DEDBD3] text-[#77756F]'
-                      }`}
-                    >
-                      {f}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="text-[#77756F]">
-                  Shock Slider Applied: <strong className="text-[#171715]">{simBtcShockPercent > 0 ? `+${simBtcShockPercent}%` : `${simBtcShockPercent}%`}</strong> (${simBtcPrice.toLocaleString()} BTC)
-                </div>
-              </div>
-
-              {/* Positions Table */}
-              <div className="overflow-x-auto border border-[#DEDBD3] rounded-xl bg-white">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead className="bg-[#F6F4EF] border-b border-[#DEDBD3] text-[#77756F]">
-                    <tr>
-                      <th className="py-3 px-4">Trove Identity</th>
-                      <th className="py-3 px-4">Collateral</th>
-                      <th className="py-3 px-4">Debt (MUSD)</th>
-                      <th className="py-3 px-4">Simulated USD</th>
-                      <th className="py-3 px-4">Live ICR</th>
-                      <th className="py-3 px-4">Health Status</th>
-                      <th className="py-3 px-4">Keeper Bounty ({effectiveKeeperBonusPercent.toFixed(1)}%)</th>
-                      <th className="py-3 px-4 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#DEDBD3]">
-                    {arenaTroves
-                      .map((trove) => {
-                        const colUsd = trove.collateralBtc * simBtcPrice;
-                        const icr = trove.debtMusd > 0 ? (colUsd / trove.debtMusd) * 100 : 999;
-                        const isLiquidatable = icr < 133.33 || (trove.debtMusd / colUsd) > 0.75;
-                        const isWarning = !isLiquidatable && icr < 150;
-                        const isLiquidated = keeperLiquidatedIds.includes(trove.id);
-                        const bountyUSD = trove.debtMusd * (effectiveKeeperBonusPercent / 100);
-
-                        return {
-                          ...trove,
-                          colUsd,
-                          icr,
-                          isLiquidatable,
-                          isWarning,
-                          isLiquidated,
-                          bountyUSD,
-                        };
-                      })
-                      .filter((t) => {
-                        if (keeperFilter === 'liquidatable') return t.isLiquidatable;
-                        if (keeperFilter === 'safe') return !t.isLiquidatable;
-                        return true;
-                      })
-                      .map((t) => (
-                        <tr
-                          key={t.id}
-                          className={`transition-colors ${
-                            t.isLiquidatable
-                              ? 'bg-[#C7473A]/5 hover:bg-[#C7473A]/10 font-medium'
-                              : t.isWarning
-                              ? 'bg-[#E66C35]/5 hover:bg-[#E66C35]/10'
-                              : 'hover:bg-[#FBFAF7]'
-                          }`}
-                        >
-                          <td className="py-3.5 px-4">
-                            <div className="font-bold text-[#171715]">{t.name}</div>
-                            <div className="text-[11px] text-[#77756F]">{formatAddress(t.borrower)}</div>
-                          </td>
-                          <td className="py-3.5 px-4 font-bold text-[#171715]">
-                            {t.collateralBtc.toFixed(2)} {t.isNative ? 'BTC' : 'tBTC'}
-                          </td>
-                          <td className="py-3.5 px-4 text-[#171715]">
-                            ${t.debtMusd.toLocaleString()}
-                          </td>
-                          <td className="py-3.5 px-4 text-[#77756F]">
-                            ${t.colUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <span
-                              className={`font-bold ${
-                                t.icr < 133.33
-                                  ? 'text-[#C7473A]'
-                                  : t.icr < 150
-                                  ? 'text-[#E66C35]'
-                                  : 'text-[#258454]'
-                              }`}
-                            >
-                              {t.icr > 900 ? '>900%' : `${t.icr.toFixed(1)}%`}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4">
-                            {t.isLiquidated ? (
-                              <span className="px-2 py-0.5 rounded bg-[#258454]/15 text-[#258454] font-bold text-[10px]">
-                                ✓ Liquidated
-                              </span>
-                            ) : t.isLiquidatable ? (
-                              <span className="px-2 py-0.5 rounded bg-[#C7473A]/15 text-[#C7473A] font-bold text-[10px] animate-pulse">
-                                ● Liquidatable
-                              </span>
-                            ) : t.isWarning ? (
-                              <span className="px-2 py-0.5 rounded bg-[#E66C35]/15 text-[#E66C35] font-bold text-[10px]">
-                                ● Auto-Heal Armed
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded bg-[#258454]/10 text-[#258454] font-bold text-[10px]">
-                                ● Healthy
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <span className="text-[#258454] font-bold">
-                              +${t.bountyUSD.toLocaleString(undefined, { maximumFractionDigits: 0 })} MUSD
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 text-right">
-                            {t.isLiquidated ? (
-                              <span className="text-xs text-[#258454] font-bold">Claimed</span>
-                            ) : t.isLiquidatable ? (
-                              <button
-                                type="button"
-                                onClick={() => handleExecuteKeeperLiquidation(t)}
-                                className="px-3.5 py-1.5 bg-[#C7473A] hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer animate-pulse"
-                              >
-                                Liquidate & Claim Bounty
-                              </button>
-                            ) : (
-                              <span className="text-xs text-[#77756F]">Protected</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Keeper Performance & Architecture Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1">
-                  <span className="text-xs font-mono text-[#77756F]">Keepers Executed</span>
-                  <div className="text-xl font-serif-display font-bold text-[#171715]">
-                    {keeperCount} Positions
-                  </div>
-                  <span className="text-[11px] font-mono text-[#77756F] block">In this browser session</span>
-                </div>
-
-                <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1">
-                  <span className="text-xs font-mono text-[#77756F]">Total Keeper Bounties Seized</span>
-                  <div className="text-xl font-serif-display font-bold text-[#258454]">
-                    ${keeperEarningsUSD.toFixed(2)} MUSD
-                  </div>
-                  <span className="text-[11px] font-mono text-[#77756F] block">Instant collateral arbitrage profit</span>
-                </div>
-
-                <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1">
-                  <span className="text-xs font-mono text-[#77756F]">Mezo Contract Integration</span>
-                  <div className="text-xl font-serif-display font-bold text-[#171715]">
-                    Liquidation Engine
-                  </div>
-                  <span className="text-[11px] font-mono text-[#77756F] block">MezoFlowVault.sol · Line 220</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <SimulatorTab
+            baseBtcPrice={baseBtcPrice}
+            currentTierName={currentTierName}
+            effectiveKeeperBonusPercent={effectiveKeeperBonusPercent}
+            keeperEarningsUSD={keeperEarningsUSD}
+            simHealToast={simHealToast}
+            setSimHealToast={setSimHealToast}
+            handleResetSim={handleResetSim}
+            activeSimCollateral={activeSimCollateral}
+            activeSimDebt={activeSimDebt}
+            simTrovePreset={simTrovePreset}
+            applySimPreset={applySimPreset}
+            isConnected={isConnected}
+            collateralEth={collateralEth}
+            debtEth={debtEth}
+            simBtcPrice={simBtcPrice}
+            simBtcShockPercent={simBtcShockPercent}
+            setSimBtcShockPercent={setSimBtcShockPercent}
+            simZone={simZone}
+            simIcr={simIcr}
+            simLtv={simLtv}
+            simCollateralUSD={simCollateralUSD}
+            actualHealAmount={actualHealAmount}
+            activeSimEscrow={activeSimEscrow}
+            simHealedState={simHealedState}
+            setSimHealedState={setSimHealedState}
+            handleSimulateAutoHeal={handleSimulateAutoHeal}
+            keeperFilter={keeperFilter}
+            setKeeperFilter={setKeeperFilter}
+            arenaTroves={arenaTroves}
+            keeperLiquidatedIds={keeperLiquidatedIds}
+            handleExecuteKeeperLiquidation={handleExecuteKeeperLiquidation}
+            formatAddress={formatAddress}
+            setActiveTab={setActiveTab}
+            keeperCount={keeperCount}
+          />
         )}
 
         {/* TAB 6: ON-CHAIN ACTIVITY */}
         {activeTab === 'activity' && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="flex justify-between items-center border-b border-[#DEDBD3] pb-4">
-              <div>
-                <h2 className="text-3xl font-serif-display font-bold text-[#171715]">On-Chain Activity Records</h2>
-                <p className="text-xs text-[#77756F] mt-1">Confirmed transactions on Mezo Testnet with real explorer links.</p>
-              </div>
-              {transactions.length > 0 && (
-                <button
-                  onClick={clearTransactionHistory}
-                  className="text-xs font-mono text-[#77756F] hover:text-[#C7473A] transition-colors"
-                >
-                  Clear History
-                </button>
-              )}
-            </div>
-
-            {transactions.length === 0 ? (
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-12 rounded-2xl text-center space-y-3 font-mono text-xs text-[#77756F]">
-                <Activity className="w-8 h-8 text-[#DEDBD3] mx-auto" />
-                <p>No transactions recorded in this browser session.</p>
-                <p className="text-[11px]">Deposits, borrows, repayments, streams, and liquidations will appear here in real time.</p>
-              </div>
-            ) : (
-              <div className="bg-[#FBFAF7] border border-[#DEDBD3] rounded-2xl overflow-hidden shadow-sm">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead className="bg-[#F6F4EF] border-b border-[#DEDBD3] text-[#77756F]">
-                    <tr>
-                      <th className="py-3 px-4">Action</th>
-                      <th className="py-3 px-4">Amount / Reference</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4">Time</th>
-                      <th className="py-3 px-4 text-right">Explorer</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#DEDBD3]">
-                    {transactions.map((tx) => (
-                      <tr key={tx.hash} className="hover:bg-[#F6F4EF]/50 transition-colors">
-                        <td className="py-3 px-4 font-bold text-[#171715]">{tx.type}</td>
-                        <td className="py-3 px-4 text-[#77756F]">{tx.amount}</td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              tx.status === 'success'
-                                ? 'bg-[#258454]/15 text-[#258454]'
-                                : tx.status === 'failed'
-                                ? 'bg-[#C7473A]/15 text-[#C7473A]'
-                                : 'bg-[#E66C35]/15 text-[#E66C35]'
-                            }`}
-                          >
-                            {tx.status}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-[#77756F]">{tx.timestamp}</td>
-                        <td className="py-3 px-4 text-right">
-                          <a
-                            href={`https://explorer.test.mezo.org/tx/${tx.hash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[#E66C35] hover:underline inline-flex items-center space-x-1"
-                          >
-                            <span>{formatAddress(tx.hash)}</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          <ActivityTab
+            transactions={transactions}
+            clearTransactionHistory={clearTransactionHistory}
+            formatAddress={formatAddress}
+          />
         )}
-
       </div>
 
       {/* FOOTER */}
-      <footer className="border-t border-[#DEDBD3] bg-[#FBFAF7] py-8 text-xs font-mono text-[#77756F]">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div>
-            <span className="font-bold text-[#171715]">BitStreamfi</span> — Built for Akindo Hackathon Wave 2 on Mezo Network.
-          </div>
-          <div className="flex flex-wrap items-center gap-4 text-[11px]">
-            <a href={`https://explorer.test.mezo.org/address/${CONTRACT_ADDRESSES.vault}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#171715]">
-              Vault Contract ↗
-            </a>
-            <a href={`https://explorer.test.mezo.org/address/${CONTRACT_ADDRESSES.streamer}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#171715]">
-              Streamer ↗
-            </a>
-            <a href={`https://explorer.test.mezo.org/address/${CONTRACT_ADDRESSES.creditEngine}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#171715]">
-              Credit Engine ↗
-            </a>
-            <a href={`https://explorer.test.mezo.org/address/${CONTRACT_ADDRESSES.musd}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#171715]">
-              Official MUSD ↗
-            </a>
-            <a href={`https://explorer.test.mezo.org/address/${CONTRACT_ADDRESSES.tbtc}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#171715]">
-              Test tBTC ↗
-            </a>
-          </div>
-        </div>
-      </footer>
+      <Footer />
+
       {/* WALLET SELECTION & DISCONNECT MODAL */}
       <WalletModal
         isOpen={isWalletModalOpen}
