@@ -140,7 +140,9 @@ export default function Home() {
     | 'cancel_stream'
     | 'faucet_tbtc'
     | 'approve_tbtc_vault'
-    | 'liquidate';
+    | 'liquidate'
+    | 'auto_heal_trove'
+    | 'set_stream_split';
 
   const [activeAction, setActiveAction] = useState<ActiveAction>('idle');
 
@@ -165,6 +167,11 @@ export default function Home() {
   const [liquidateDebtAmount, setLiquidateDebtAmount] = useState('');
   const [liquidateSeizeNative, setLiquidateSeizeNative] = useState(true);
   const [showWalletModal, setShowWalletModal] = useState(false);
+
+  // Wave 2 Task 1 States: Auto-Healing Trove & Stream Splitting
+  const [streamIdForAutoHeal, setStreamIdForAutoHeal] = useState('0');
+  const [splitPercent, setSplitPercent] = useState('20');
+  const [splitTargetBorrower, setSplitTargetBorrower] = useState('');
 
   const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState<number | null>(null);
@@ -338,6 +345,43 @@ export default function Home() {
   const streamNow = currentTime ?? streamStartTime;
   const streamElapsed = Math.min(streamDuration, Math.max(0, streamNow - streamStartTime));
   const streamProgressPercent = streamExists && streamDuration > 0 && currentTime !== null ? Math.min(100, Math.round((streamElapsed / streamDuration) * 100)) : 0;
+
+  // Wave 2: Auto-Heal Trove Reads
+  const { data: autoHealEligibilityData, refetch: refetchAutoHealEligibility } = useReadContract({
+    address: CONTRACT_ADDRESSES.vault,
+    abi: VAULT_ABI,
+    functionName: 'isAutoHealEligible',
+    args: address ? [address] : undefined,
+  });
+  const isAutoHealEligible = autoHealEligibilityData ? Boolean((autoHealEligibilityData as any)[0]) : false;
+  const autoHealCurrentICR = autoHealEligibilityData && (autoHealEligibilityData as any)[1] ? Number(formatEther((autoHealEligibilityData as any)[1])) * 100 : 0;
+
+  const { data: rawDebtToRestore, refetch: refetchDebtToRestore } = useReadContract({
+    address: CONTRACT_ADDRESSES.vault,
+    abi: VAULT_ABI,
+    functionName: 'calculateDebtToRestoreICR',
+    args: address ? [address, parseEther('1.6')] : undefined, // 160% target ICR
+  });
+  const debtToRestoreEth = rawDebtToRestore ? Number(formatEther(rawDebtToRestore as bigint)) : 0;
+
+  const { data: rawUnvestedBuffer, refetch: refetchUnvestedBuffer } = useReadContract({
+    address: CONTRACT_ADDRESSES.streamer,
+    abi: STREAMER_ABI,
+    functionName: 'getUnvestedBuffer',
+    args: [BigInt(streamIdForAutoHeal || '0')],
+  });
+  const unvestedBufferEth = rawUnvestedBuffer ? Number(formatEther(rawUnvestedBuffer as bigint)) : 0;
+
+  // Wave 2: Stream-to-Debt Amortization Split Reads
+  const { data: streamSplitData, refetch: refetchStreamSplit } = useReadContract({
+    address: CONTRACT_ADDRESSES.streamer,
+    abi: STREAMER_ABI,
+    functionName: 'streamSplits',
+    args: [BigInt(streamIdToManage || '0')],
+  });
+  const currentSplitBps = streamSplitData ? Number((streamSplitData as any)[0]) : 0;
+  const currentSplitTarget = streamSplitData ? ((streamSplitData as any)[1] as string) : '';
+  const isSplitEnabled = streamSplitData ? Boolean((streamSplitData as any)[2]) : false;
 
   const isWrongNetwork = mounted && isConnected && chainId !== MEZO_TESTNET_CHAIN_ID;
   const isReady = mounted && isConnected && !isWrongNetwork;
@@ -718,6 +762,59 @@ export default function Home() {
     });
   };
 
+  // Wave 2 Task 1: Auto-Heal Trove Handler
+  const handleAutoHealTrove = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isWrongNetwork || !address) return;
+    executeTx({
+      actionType: 'auto_heal_trove',
+      title: 'Auto-Heal Trove',
+      amountDisplay: `Stream #${streamIdForAutoHeal} Unvested Buffer`,
+      writeCall: () =>
+        writeVaultAsync({
+          address: CONTRACT_ADDRESSES.vault,
+          abi: VAULT_ABI,
+          functionName: 'autoHealTrove',
+          args: [address, BigInt(streamIdForAutoHeal || '0')],
+        }),
+      onConfirmed: () => {
+        refetchDebt();
+        refetchCollateral();
+        refetchHealthFactor();
+        refetchIsLiquidatable();
+        refetchAutoHealEligibility();
+        refetchDebtToRestore();
+        refetchUnvestedBuffer();
+        refetchStream();
+        refetchClaimable();
+        refetchMusd();
+      },
+    });
+  };
+
+  // Wave 2 Task 1: Stream Splitter Configuration Handler
+  const handleSetStreamSplit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isWrongNetwork || !address) return;
+    const bps = Math.round(Number(splitPercent) * 100);
+    const target = isAddress(splitTargetBorrower) ? (splitTargetBorrower as `0x${string}`) : address;
+    executeTx({
+      actionType: 'set_stream_split',
+      title: 'Configure Stream Split',
+      amountDisplay: `${splitPercent}% to ${formatAddress(target)}`,
+      writeCall: () =>
+        writeStreamerAsync({
+          address: CONTRACT_ADDRESSES.streamer,
+          abi: STREAMER_ABI,
+          functionName: 'setStreamSplit',
+          args: [BigInt(streamIdToManage || '0'), BigInt(bps), target],
+        }),
+      onConfirmed: () => {
+        refetchStreamSplit();
+      },
+    });
+  };
+
   // Credit Engine: Deposit, Withdraw, and Amortize (High Finding 2 fix)
   const handleDepositYield = (e: React.FormEvent) => {
     e.preventDefault();
@@ -880,10 +977,15 @@ export default function Home() {
       setStatusMessage(`Nothing available to withdraw yet from Stream #${streamIdToManage}. Funds vest second-by-second.`);
       return;
     }
+    const splitAmountEth = isSplitEnabled && currentSplitBps > 0 ? (claimableEth * currentSplitBps) / 10000 : 0;
+    const recipientAmountEth = claimableEth - splitAmountEth;
     executeTx({
       actionType: 'withdraw_stream',
       title: 'Claim Stream Earnings',
-      amountDisplay: `${claimableEth.toFixed(4)} MUSD from Stream #${streamIdToManage}`,
+      amountDisplay:
+        isSplitEnabled && currentSplitBps > 0
+          ? `${recipientAmountEth.toFixed(4)} MUSD to Wallet + ${splitAmountEth.toFixed(4)} MUSD to Debt Amortization`
+          : `${claimableEth.toFixed(4)} MUSD from Stream #${streamIdToManage}`,
       writeCall: () =>
         writeStreamerAsync({
           address: CONTRACT_ADDRESSES.streamer,
@@ -895,6 +997,10 @@ export default function Home() {
         refetchStream();
         refetchClaimable();
         refetchMusd();
+        refetchDebt();
+        refetchAutoHealEligibility();
+        refetchHealthFactor();
+        refetchStreamSplit();
       },
     });
   };
@@ -1556,7 +1662,122 @@ export default function Home() {
                 </form>
               </div>
 
-              {/* CARD 3: SELF-REPAYING CREDIT ENGINE (High Finding 2 Fix) */}
+              {/* CARD 3: CLOSED-LOOP SELF-HEALING TROVE SHIELD (Wave 2 Innovation) */}
+              <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl lg:col-span-2 shadow-sm space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-[#DEDBD3] pb-3 gap-2">
+                  <div className="flex items-center space-x-2.5">
+                    <Shield className="w-5 h-5 text-[#E66C35]" />
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#171715]">
+                      Closed-Loop "Self-Healing Trove" Shield
+                    </h3>
+                    <span className="text-[10px] font-mono bg-[#E66C35]/15 text-[#E66C35] px-2 py-0.5 rounded-full font-bold">
+                      Protocol-Aware
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-xs font-mono">
+                    <span className="text-[#77756F]">Linked Stream:</span>
+                    <strong className="text-[#171715]">Stream #{streamIdForAutoHeal}</strong>
+                  </div>
+                </div>
+
+                {/* Status Callout Banner */}
+                <div
+                  className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-mono ${
+                    isAutoHealEligible
+                      ? 'bg-[#C7473A]/10 border-[#C7473A]/30 text-[#C7473A]'
+                      : 'bg-[#258454]/10 border-[#258454]/30 text-[#258454]'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <Activity className={`w-4 h-4 shrink-0 ${isAutoHealEligible ? 'animate-pulse' : ''}`} />
+                    <span>
+                      {isAutoHealEligible
+                        ? `CRITICAL SHORTFALL DETECTED (ICR: ${autoHealCurrentICR.toFixed(1)}% < 150%). Auto-Heal is armed to reclaim unvested buffer and restore Trove health.`
+                        : `TROVE SHIELD ACTIVE (ICR: ${autoHealCurrentICR > 0 ? autoHealCurrentICR.toFixed(1) : (ltvNumeric > 0 ? (10000 / ltvNumeric).toFixed(1) : '∞')}% >= 150%). Position is healthy. Auto-Heal stands by to intercept drops.`}
+                    </span>
+                  </div>
+                  <span className="font-bold shrink-0 uppercase tracking-wider text-[11px] px-2.5 py-1 rounded bg-white/60">
+                    {isAutoHealEligible ? 'Action Required' : 'Shield Armed'}
+                  </span>
+                </div>
+
+                {/* 3 Metric Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1">
+                    <span className="text-xs font-mono text-[#77756F]">160% Target Recovery Deficit</span>
+                    <div className="text-lg font-mono font-bold text-[#171715]">
+                      {debtToRestoreEth > 0 ? `${debtToRestoreEth.toFixed(2)} MUSD` : '0.00 MUSD'}
+                    </div>
+                    <span className="text-[11px] text-[#77756F] block">Debt repayment needed to reach 160% ICR</span>
+                  </div>
+
+                  <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1">
+                    <span className="text-xs font-mono text-[#77756F]">Unvested Escrow Buffer</span>
+                    <div className="text-lg font-mono font-bold text-[#258454]">
+                      {unvestedBufferEth.toFixed(2)} MUSD
+                    </div>
+                    <span className="text-[11px] text-[#77756F] block">Available in Stream #{streamIdForAutoHeal}</span>
+                  </div>
+
+                  <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-1">
+                    <span className="text-xs font-mono text-[#77756F]">Worker Salary Protection</span>
+                    <div className="text-lg font-mono font-bold text-[#171715]">100% Inviolable</div>
+                    <span className="text-[11px] text-[#77756F] block">Vested salary cannot be seized or liquidated</span>
+                  </div>
+                </div>
+
+                {/* Auto-Heal Execution Form */}
+                <form onSubmit={handleAutoHealTrove} className="bg-[#F6F4EF] p-5 rounded-xl border border-[#DEDBD3] space-y-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs font-mono">
+                    <label className="font-bold text-[#171715]">
+                      Configure Linked Escrow Stream for Protection:
+                    </label>
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-[#77756F]">Select Stream ID:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={streamIdForAutoHeal}
+                        onChange={(e) => setStreamIdForAutoHeal(e.target.value)}
+                        className="w-16 bg-[#FBFAF7] border border-[#DEDBD3] rounded-lg px-2 py-1 text-xs font-mono text-[#171715] focus:outline-none focus:border-[#E66C35]"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-[#77756F] leading-relaxed">
+                    When triggered, the contract reclaims only the required deficit from Stream #{streamIdForAutoHeal}'s unvested buffer to repay vault and Mezo Trove debt. 
+                    Employee earned earnings remain intact, and collateral is safeguarded from keeper liquidation discounts.
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-3">
+                    <button
+                      type="submit"
+                      disabled={!isReady || (vaultPending && activeAction === 'auto_heal_trove') || (!isAutoHealEligible && debtEth === 0)}
+                      className={`w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center space-x-2 ${
+                        isAutoHealEligible
+                          ? 'bg-[#C7473A] hover:bg-red-700 text-white shadow-md animate-pulse cursor-pointer'
+                          : 'bg-[#171715] hover:bg-[#E66C35] text-white cursor-pointer'
+                      } disabled:opacity-50`}
+                    >
+                      <Shield className="w-4 h-4" />
+                      <span>
+                        {(vaultPending || txStatus === 'wallet_confirm') && activeAction === 'auto_heal_trove'
+                          ? 'Auto-Healing Trove...'
+                          : isAutoHealEligible
+                          ? 'Execute Auto-Heal Now (Defend Trove)'
+                          : 'Trigger Auto-Heal (Simulate Protection)'}
+                      </span>
+                    </button>
+                    {!isAutoHealEligible && (
+                      <span className="text-[11px] font-mono text-[#77756F]">
+                        ● Position currently safe. Automatically triggers if ICR drops below 150%.
+                      </span>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              {/* CARD 4: SELF-REPAYING CREDIT ENGINE (High Finding 2 Fix) */}
               <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl lg:col-span-2 shadow-sm space-y-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-[#DEDBD3] pb-3 gap-2">
                   <div className="flex items-center space-x-2">
@@ -1657,7 +1878,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* CARD 4: KEEPER LIQUIDATION ENGINE (High Finding 3 Fix) */}
+              {/* CARD 5: KEEPER LIQUIDATION ENGINE (High Finding 3 Fix) */}
               <div className="bg-[#FBFAF7] border border-[#DEDBD3] p-7 rounded-2xl lg:col-span-2 shadow-sm space-y-6">
                 <div className="flex items-center justify-between border-b border-[#DEDBD3] pb-3">
                   <div className="flex items-center space-x-2">
@@ -1951,18 +2172,128 @@ export default function Home() {
                         </div>
                       </div>
 
+                      {/* Wave 2: Stream-to-Debt Amortization Split Configuration */}
+                      <div className="bg-[#F6F4EF] p-4 rounded-xl border border-[#DEDBD3] space-y-3 font-mono text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[#171715] flex items-center space-x-1.5">
+                            <ArrowRightLeft className="w-3.5 h-3.5 text-[#E66C35]" />
+                            <span>Stream-to-Debt Amortization</span>
+                          </span>
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                              isSplitEnabled && currentSplitBps > 0
+                                ? 'bg-[#258454]/15 text-[#258454]'
+                                : 'bg-[#77756F]/15 text-[#77756F]'
+                            }`}
+                          >
+                            {isSplitEnabled && currentSplitBps > 0
+                              ? `${(currentSplitBps / 100).toFixed(0)}% Auto-Repay Active`
+                              : 'Split Inactive'}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-[#77756F] leading-relaxed">
+                          Recipients can automatically allocate up to 50% of claimed salary to amortize vault debt (theirs or their employer's), lowering liquidation risk on every paycheck.
+                        </p>
+
+                        {isCurrentUserRecipient && streamIsActive ? (
+                          <form onSubmit={handleSetStreamSplit} className="space-y-3 pt-2 border-t border-[#DEDBD3]">
+                            <div className="space-y-1">
+                              <div className="flex justify-between items-center text-[11px]">
+                                <label className="text-[#77756F]">Amortization Split %</label>
+                                <div className="flex space-x-1">
+                                  {['0', '10', '20', '30', '50'].map((p) => (
+                                    <button
+                                      key={p}
+                                      type="button"
+                                      onClick={() => setSplitPercent(p)}
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                        splitPercent === p ? 'bg-[#171715] text-white' : 'bg-[#DEDBD3]/50 text-[#171715]'
+                                      }`}
+                                    >
+                                      {p}%
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="50"
+                                step="5"
+                                value={splitPercent}
+                                onChange={(e) => setSplitPercent(e.target.value)}
+                                className="w-full accent-[#E66C35] cursor-pointer"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <div className="flex justify-between items-center text-[11px]">
+                                <label className="text-[#77756F]">Target Borrower Account</label>
+                                {streamEmployer && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSplitTargetBorrower(streamEmployer)}
+                                    className="text-[#E66C35] hover:underline"
+                                  >
+                                    Use Employer ({formatAddress(streamEmployer)})
+                                  </button>
+                                )}
+                              </div>
+                              <input
+                                type="text"
+                                value={splitTargetBorrower}
+                                onChange={(e) => setSplitTargetBorrower(e.target.value)}
+                                placeholder={address ? `Default: ${formatAddress(address)} (You)` : '0x... borrower account'}
+                                className="w-full bg-[#FBFAF7] border border-[#DEDBD3] rounded-lg px-3 py-1.5 text-xs font-mono text-[#171715] focus:outline-none focus:border-[#E66C35]"
+                              />
+                            </div>
+
+                            <button
+                              type="submit"
+                              disabled={(streamerPending && activeAction === 'set_stream_split') || !isReady}
+                              className="w-full bg-[#171715] hover:bg-[#E66C35] text-white font-semibold py-2 rounded-lg text-xs transition-colors disabled:opacity-50 cursor-pointer"
+                            >
+                              {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'set_stream_split'
+                                ? 'Configuring Split...'
+                                : `Save ${splitPercent}% Debt Amortization Split`}
+                            </button>
+                          </form>
+                        ) : (
+                          <div className="text-[11px] text-[#77756F]">
+                            {isSplitEnabled && currentSplitBps > 0 ? (
+                              <p>
+                                Current Split: <strong>{(currentSplitBps / 100).toFixed(0)}%</strong> of claim will automatically repay debt for{' '}
+                                <strong className="text-[#171715]">{formatAddress(currentSplitTarget)}</strong>.
+                              </p>
+                            ) : (
+                              <p>No debt amortization split configured for this stream.</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       {/* Recipient Claim Action */}
                       {isCurrentUserRecipient && streamIsActive && (
-                        <button
-                          type="button"
-                          onClick={handleWithdrawStream}
-                          disabled={(streamerPending && activeAction === 'withdraw_stream') || !isReady || claimableEth <= 0}
-                          className="w-full bg-[#258454] hover:opacity-90 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50"
-                        >
-                          {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'withdraw_stream'
-                            ? 'Claiming...'
-                            : `Claim Earned MUSD (${claimableEth.toFixed(4)} Available)`}
-                        </button>
+                        <div className="space-y-1.5">
+                          <button
+                            type="button"
+                            onClick={handleWithdrawStream}
+                            disabled={(streamerPending && activeAction === 'withdraw_stream') || !isReady || claimableEth <= 0}
+                            className="w-full bg-[#258454] hover:opacity-90 text-white font-semibold py-2.5 rounded-xl text-xs transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            {(streamerPending || txStatus === 'wallet_confirm') && activeAction === 'withdraw_stream'
+                              ? 'Claiming...'
+                              : isSplitEnabled && currentSplitBps > 0
+                              ? `Claim Earned MUSD (${((claimableEth * (10000 - currentSplitBps)) / 10000).toFixed(4)} Wallet + ${((claimableEth * currentSplitBps) / 10000).toFixed(4)} Debt)`
+                              : `Claim Earned MUSD (${claimableEth.toFixed(4)} Available)`}
+                          </button>
+                          {isSplitEnabled && currentSplitBps > 0 && claimableEth > 0 && (
+                            <p className="text-[10px] text-center font-mono text-[#77756F]">
+                              ✓ Automatic closed loop: {((claimableEth * currentSplitBps) / 10000).toFixed(4)} MUSD amortizes debt for {formatAddress(currentSplitTarget)} on-chain.
+                            </p>
+                          )}
+                        </div>
                       )}
 
                       {/* Employer Top Up */}

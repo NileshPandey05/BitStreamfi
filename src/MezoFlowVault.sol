@@ -47,10 +47,16 @@ interface ISortedTroves {
         returns (address, address);
 }
 
+interface IPayrollStreamer {
+    function emergencyReclaimForDebt(uint256 streamId, uint256 maxAmount) external returns (uint256);
+    function getUnvestedBuffer(uint256 streamId) external view returns (uint256);
+}
+
 /**
  * @title MezoFlowVault
  * @notice Protocol-aware Bitcoin collateral vault integrated with Mezo's native BorrowerOperations and PriceFeed.
- * Supports explicit separation of native BTC and tBTC ERC-20 collateral, dynamic oracle pricing, and keeper liquidations.
+ * Supports explicit separation of native BTC and tBTC collateral, dynamic oracle pricing, keeper liquidations,
+ * and closed-loop Self-Healing Trove automated debt amortization.
  */
 contract MezoFlowVault {
     address public owner;
@@ -64,6 +70,11 @@ contract MezoFlowVault {
     address public hintHelpers;
     address public sortedTroves;
 
+    // Wave 2 additions: PayrollStreamer integration & Auto-Heal thresholds
+    address public payrollStreamer;
+    uint256 public constant AUTO_HEAL_ICR_THRESHOLD = 135e16; // 135% ICR trigger
+    uint256 public constant TARGET_HEALTHY_ICR = 170e16; // 170% target healthy ICR
+
     uint256 public constant MAX_LTV_BPS = 6000; // 60% Max Borrow LTV
     uint256 public constant LIQUIDATION_THRESHOLD_BPS = 7500; // 75% Liquidation LTV
     uint256 public constant LIQUIDATION_BONUS_BPS = 500; // 5% keeper incentive
@@ -71,7 +82,7 @@ contract MezoFlowVault {
 
     uint256 public fallbackPrice = 60000 * 1e18; // Fallback if oracle is unavailable
 
-    // High Severity Fix 1: Separate native collateral and tBTC collateral accounting
+    // Collateral accounting separation
     mapping(address => uint256) public tbtcCollateralBalances;
     mapping(address => uint256) public nativeCollateralBalances;
     mapping(address => uint256) public borrowedMUSD;
@@ -92,6 +103,14 @@ contract MezoFlowVault {
     event MezoTroveOpened(uint256 btcCollateral, uint256 musdAmount);
     event MezoTroveAdjusted(uint256 collAdded, uint256 debtRepaid);
     event PriceFeedUpdated(address newPriceFeed);
+    event PayrollStreamerUpdated(address newStreamer);
+    event TroveAutoHealed(
+        address indexed employer,
+        uint256 indexed streamId,
+        uint256 musdRepaid,
+        uint256 preICR,
+        uint256 postICR
+    );
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
@@ -122,6 +141,11 @@ contract MezoFlowVault {
         troveManager = _troveManager;
         hintHelpers = _hintHelpers;
         sortedTroves = _sortedTroves;
+    }
+
+    function setPayrollStreamer(address _streamer) external onlyOwner {
+        payrollStreamer = _streamer;
+        emit PayrollStreamerUpdated(_streamer);
     }
 
     // --- Price Oracle Logic ---
@@ -185,6 +209,52 @@ contract MezoFlowVault {
         if (debt == 0) return false;
         uint256 maxAllowedDebt = (getCollateralValueUSD(user) * LIQUIDATION_THRESHOLD_BPS) / BPS_DENOMINATOR;
         return debt > maxAllowedDebt;
+    }
+
+    // --- Wave 2: Self-Healing Trove View & Calculation Logic ---
+
+    function isAutoHealEligible(address employer) public view returns (bool eligible, uint256 currentICR) {
+        // 1. Check external Mezo Trove if configured
+        if (troveManager != address(0)) {
+            uint256 status = ITroveManager(troveManager).getTroveStatus(employer);
+            if (status == 1) { // 1 = Active Trove
+                currentICR = ITroveManager(troveManager).getCurrentICR(employer, getBTCPrice());
+                if (currentICR > 0 && currentICR < AUTO_HEAL_ICR_THRESHOLD) {
+                    return (true, currentICR);
+                }
+            }
+        }
+
+        // 2. Check internal vault debt position
+        uint256 debt = borrowedMUSD[employer];
+        if (debt > 0) {
+            uint256 collValue = getCollateralValueUSD(employer);
+            if (collValue > 0) {
+                currentICR = (collValue * 1e18) / debt;
+            } else {
+                currentICR = 0;
+            }
+            if (currentICR < AUTO_HEAL_ICR_THRESHOLD || isLiquidatable(employer)) {
+                return (true, currentICR);
+            }
+        }
+
+        return (false, currentICR);
+    }
+
+    function calculateDebtToRestoreICR(address employer, uint256 targetICR) public view returns (uint256) {
+        require(targetICR > 0, "Target ICR must be > 0");
+        uint256 collValueUSD = getCollateralValueUSD(employer);
+        if (collValueUSD == 0) return borrowedMUSD[employer];
+
+        // Max debt allowed at target ICR: TargetMaxDebt = (CollValueUSD * 1e18) / targetICR
+        uint256 targetMaxDebt = (collValueUSD * 1e18) / targetICR;
+        uint256 currentDebt = borrowedMUSD[employer];
+
+        if (currentDebt > targetMaxDebt) {
+            return currentDebt - targetMaxDebt;
+        }
+        return 0;
     }
 
     // --- Deposit & Withdraw Logic ---
@@ -269,7 +339,7 @@ contract MezoFlowVault {
         emit MUSARepaid(user, amount);
     }
 
-    // --- High Severity Fix 3: Liquidation Mechanism ---
+    // --- Liquidation Mechanism ---
 
     function liquidate(address user, uint256 debtToRepay, bool seizeNative) external nonReentrant {
         require(user != msg.sender, "Cannot liquidate self");
@@ -278,7 +348,6 @@ contract MezoFlowVault {
         require(isLiquidatable(user), "Position not liquidatable");
 
         uint256 btcPrice = getBTCPrice();
-        // Seize collateral with 5% bonus: collateralSeized = (debtToRepay * 10500 / 10000 * 1e18) / btcPrice
         uint256 collateralValueWithBonus = (debtToRepay * (BPS_DENOMINATOR + LIQUIDATION_BONUS_BPS)) / BPS_DENOMINATOR;
         uint256 collateralSeized = (collateralValueWithBonus * 1e18) / btcPrice;
 
@@ -296,11 +365,9 @@ contract MezoFlowVault {
 
         borrowedMUSD[user] -= debtToRepay;
 
-        // Liquidator repays user debt in MUSD
         bool musdReceived = IERC20(musdToken).transferFrom(msg.sender, address(this), debtToRepay);
         require(musdReceived, "MUSD transfer failed");
 
-        // Liquidator receives seized collateral + bonus
         if (seizeNative) {
             (bool sent, ) = payable(msg.sender).call{value: collateralSeized}("");
             require(sent, "Native transfer failed");
@@ -310,6 +377,42 @@ contract MezoFlowVault {
         }
 
         emit PositionLiquidated(user, msg.sender, debtToRepay, collateralSeized, seizeNative);
+    }
+
+    // --- Wave 2: Closed-Loop Self-Healing Trove Execution ---
+
+    function autoHealTrove(address employer, uint256 streamId) external nonReentrant {
+        require(payrollStreamer != address(0), "PayrollStreamer not configured");
+        (bool eligible, uint256 preICR) = isAutoHealEligible(employer);
+        require(eligible, "Trove is healthy or not eligible for auto-heal");
+
+        uint256 debtToRepay = calculateDebtToRestoreICR(employer, TARGET_HEALTHY_ICR);
+        if (debtToRepay == 0) {
+            debtToRepay = borrowedMUSD[employer] > 0 ? (borrowedMUSD[employer] / 4) + 1 : 500 ether;
+        }
+
+        // Reclaim emergency buffer from unvested payroll stream
+        uint256 reclaimed = IPayrollStreamer(payrollStreamer).emergencyReclaimForDebt(streamId, debtToRepay);
+        require(reclaimed > 0, "No unvested buffer reclaimed");
+
+        // Repay internal vault debt
+        if (borrowedMUSD[employer] > 0) {
+            uint256 internalRepay = reclaimed < borrowedMUSD[employer] ? reclaimed : borrowedMUSD[employer];
+            borrowedMUSD[employer] -= internalRepay;
+            emit MUSARepaid(employer, internalRepay);
+            reclaimed -= internalRepay;
+        }
+
+        // Repay external Mezo Trove if remaining and Trove exists
+        if (reclaimed > 0 && borrowerOperations != address(0)) {
+            IERC20(musdToken).approve(borrowerOperations, reclaimed);
+            (address upper, address lower) = _getCurrentMezoHints();
+            IBorrowerOperations(borrowerOperations).repayMUSD(reclaimed, upper, lower);
+            emit MezoTroveAdjusted(0, reclaimed);
+        }
+
+        (, uint256 postICR) = isAutoHealEligible(employer);
+        emit TroveAutoHealed(employer, streamId, debtToRepay, preICR, postICR);
     }
 
     // --- Mezo Protocol BorrowerOperations Trove Composition ---

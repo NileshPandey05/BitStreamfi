@@ -239,6 +239,36 @@ export const VAULT_ABI = [
     outputs: [],
     stateMutability: "payable",
   },
+  {
+    type: "function",
+    name: "autoHealTrove",
+    inputs: [
+      { name: "employer", type: "address" },
+      { name: "streamId", type: "uint256" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "isAutoHealEligible",
+    inputs: [{ name: "employer", type: "address" }],
+    outputs: [
+      { name: "eligible", type: "bool" },
+      { name: "currentICR", type: "uint256" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "calculateDebtToRestoreICR",
+    inputs: [
+      { name: "employer", type: "address" },
+      { name: "targetICR", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
 ] as const;
 
 export const STREAMER_ABI = [
@@ -305,6 +335,45 @@ export const STREAMER_ABI = [
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "setStreamSplit",
+    inputs: [
+      { name: "streamId", type: "uint256" },
+      { name: "autoRepayBps", type: "uint256" },
+      { name: "targetBorrower", type: "address" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "streamSplits",
+    inputs: [{ name: "", type: "uint256" }],
+    outputs: [
+      { name: "autoRepayBps", type: "uint256" },
+      { name: "targetBorrower", type: "address" },
+      { name: "enabled", type: "bool" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getUnvestedBuffer",
+    inputs: [{ name: "streamId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "emergencyReclaimForDebt",
+    inputs: [
+      { name: "streamId", type: "uint256" },
+      { name: "maxAmount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "nonpayable",
   },
 ] as const;
 
