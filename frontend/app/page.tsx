@@ -1406,7 +1406,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#F6F4EF] text-[#171715] flex flex-col font-sans selection:bg-[#E66C35]/20 selection:text-[#E66C35]">
+    <main className="min-h-screen bg-[#0A0A0C] text-[#F4F3EF] flex flex-col font-sans selection:bg-[#D43838]/30 selection:text-[#FFFFFF]">
       {/* HEADER & WRONG NETWORK WARNING */}
       <Header
         mounted={mounted}

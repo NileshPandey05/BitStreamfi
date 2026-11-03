@@ -27,6 +27,7 @@ secrets/
 !frontend/app/favicon.ico
 !assets/hero-preview.png
 !frontend/public/hero-preview.png
+!frontend/public/images/edo_temple_stream_hero.jpg
 *.svg
 !frontend/public/*.svg
 akindo_*.png

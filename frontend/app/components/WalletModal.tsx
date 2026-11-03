@@ -405,24 +405,24 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 animate-fadeIn">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-black/75 backdrop-blur-md transition-opacity"
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* Modal Dialog Card */}
-      <div className="relative bg-[#FBFAF7] border border-[#DEDBD3] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden z-10 flex flex-col max-h-[90vh]">
+      <div className="relative bg-[#121216] border border-[#26252C] rounded-3xl shadow-[0_15px_60px_rgba(0,0,0,0.8)] w-full max-w-lg overflow-hidden z-10 flex flex-col max-h-[90vh] text-[#F4F3EF]">
         {/* MODAL HEADER */}
-        <div className="px-6 py-5 border-b border-[#DEDBD3] flex items-center justify-between bg-[#F6F4EF]/70">
+        <div className="px-6 py-5 border-b border-[#26252C] flex items-center justify-between bg-[#0A0A0C]/80">
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-xl bg-[#171715] text-[#FBFAF7] flex items-center justify-center font-serif-display font-bold text-lg shadow-sm">
+            <div className="w-9 h-9 rounded-xl bg-[#D43838] text-white flex items-center justify-center font-serif-display font-bold text-lg shadow-[0_0_12px_rgba(212,56,56,0.35)]">
               ₿
             </div>
             <div>
-              <h2 className="font-serif-display text-2xl font-bold tracking-tight text-[#171715]">
+              <h2 className="font-serif-display text-2xl font-bold tracking-tight text-[#F4F3EF]">
                 {mode === 'manage' && isConnected ? 'Wallet & Account' : 'Connect a Wallet'}
               </h2>
-              <p className="text-xs font-mono text-[#77756F]">
+              <p className="text-xs font-mono text-[#9A978F]">
                 {mode === 'manage' && isConnected
                   ? 'Connected to Mezo Testnet (Chain ID 31611)'
                   : 'Select your preferred wallet for BitStreamfi'}
@@ -432,7 +432,7 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-[#77756F] hover:text-[#171715] hover:bg-[#DEDBD3]/40 transition-colors"
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-[#9A978F] hover:text-[#F4F3EF] hover:bg-[#18181E] transition-colors cursor-pointer"
             title="Close"
           >
             <X className="w-4 h-4" />
@@ -518,25 +518,25 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
                       disabled={isPendingThis || isCurrentActive}
                       className={`w-full group p-4 rounded-2xl border text-left transition-all flex items-center justify-between ${
                         isCurrentActive
-                          ? 'border-[#258454] bg-[#258454]/5 shadow-sm'
-                          : 'border-[#DEDBD3] hover:border-[#171715] bg-[#FBFAF7] hover:bg-[#F6F4EF] shadow-sm hover:shadow'
-                      } disabled:opacity-75`}
+                          ? 'border-[#34D399] bg-[#34D399]/10 shadow-sm'
+                          : 'border-[#26252C] hover:border-[#D43838]/60 bg-[#0A0A0C] hover:bg-[#18181E] shadow-sm'
+                      } disabled:opacity-75 cursor-pointer`}
                     >
                       <div className="flex items-center space-x-3.5 min-w-0">
                         {/* Icon */}
-                        <div className="w-10 h-10 rounded-xl bg-white border border-[#DEDBD3] flex items-center justify-center p-1.5 shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                        <div className="w-10 h-10 rounded-xl bg-[#18181E] border border-[#26252C] flex items-center justify-center p-1.5 shrink-0 shadow-xs group-hover:scale-105 transition-transform">
                           {getWalletIcon(connector.name || connector.id, connector.icon, 'w-7 h-7')}
                         </div>
 
                         {/* Details */}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center space-x-2">
-                            <span className="font-semibold text-sm text-[#171715] group-hover:text-[#E66C35] transition-colors">
+                            <span className="font-semibold text-sm text-[#F4F3EF] group-hover:text-[#FF7A7A] transition-colors">
                               {meta.displayName}
                             </span>
                             {isCurrentActive ? (
-                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border border-[#258454]/40 bg-[#258454]/15 text-[#258454] flex items-center space-x-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-[#258454]" />
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border border-[#34D399]/40 bg-[#34D399]/15 text-[#34D399] flex items-center space-x-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#34D399]" />
                                 <span>Active</span>
                               </span>
                             ) : (
@@ -549,7 +549,7 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
                               )
                             )}
                           </div>
-                          <p className="text-xs text-[#77756F] font-mono truncate mt-0.5">
+                          <p className="text-xs text-[#9A978F] font-mono truncate mt-0.5">
                             {meta.description}
                           </p>
                         </div>
@@ -558,14 +558,14 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
                       {/* Right indicator */}
                       <div className="flex items-center space-x-2 pl-3 shrink-0">
                         {isPendingThis ? (
-                          <div className="flex items-center space-x-1.5 text-xs font-mono text-[#E66C35]">
+                          <div className="flex items-center space-x-1.5 text-xs font-mono text-[#FF7A7A]">
                             <RefreshCw className="w-4 h-4 animate-spin" />
                             <span className="hidden sm:inline">Connecting...</span>
                           </div>
                         ) : isCurrentActive ? (
-                          <CheckCircle2 className="w-5 h-5 text-[#258454]" />
+                          <CheckCircle2 className="w-5 h-5 text-[#34D399]" />
                         ) : (
-                          <ChevronRight className="w-4 h-4 text-[#77756F] group-hover:text-[#171715] group-hover:translate-x-0.5 transition-all" />
+                          <ChevronRight className="w-4 h-4 text-[#9A978F] group-hover:text-[#F4F3EF] group-hover:translate-x-0.5 transition-all" />
                         )}
                       </div>
                     </button>
@@ -574,8 +574,8 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
               </div>
 
               {/* Security info notice */}
-              <div className="bg-[#F6F4EF] border border-[#DEDBD3] rounded-2xl p-3.5 flex items-start space-x-2.5 text-xs text-[#77756F] font-mono">
-                <ShieldCheck className="w-4 h-4 text-[#258454] shrink-0 mt-0.5" />
+              <div className="bg-[#0A0A0C] border border-[#26252C] rounded-2xl p-3.5 flex items-start space-x-2.5 text-xs text-[#9A978F] font-mono">
+                <ShieldCheck className="w-4 h-4 text-[#34D399] shrink-0 mt-0.5" />
                 <p>
                   BitStreamfi connects securely to Mezo Testnet (31611). Your private keys remain safely inside your wallet.
                 </p>
@@ -589,8 +589,8 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
           {mode === 'manage' && isConnected && (
             <div className="space-y-6">
               {/* Account Overview Card */}
-              <div className="bg-gradient-to-br from-[#171715] to-[#252522] text-[#FBFAF7] rounded-3xl p-6 shadow-xl relative overflow-hidden">
-                <div className="absolute right-0 top-0 w-36 h-36 bg-[#E66C35]/15 rounded-full blur-2xl pointer-events-none" />
+              <div className="bg-gradient-to-br from-[#18181E] via-[#121216] to-[#0A0A0C] text-[#F4F3EF] border border-[#26252C] rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                <div className="absolute right-0 top-0 w-36 h-36 bg-[#D43838]/15 rounded-full blur-2xl pointer-events-none" />
 
                 <div className="relative z-10 space-y-4">
                   <div className="flex items-center justify-between">
@@ -598,38 +598,38 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
                       <div className="w-7 h-7 rounded-lg bg-white/10 p-1 flex items-center justify-center">
                         {getWalletIcon(activeConnector?.name || activeConnector?.id, undefined, 'w-5 h-5')}
                       </div>
-                      <span className="font-mono text-xs text-white/80 font-semibold">
+                      <span className="font-mono text-xs text-[#F4F3EF]/90 font-semibold">
                         {activeConnector?.name || 'Connected Wallet'}
                       </span>
                     </div>
 
-                    <div className="flex items-center space-x-1.5 bg-[#258454]/30 border border-[#258454]/60 px-2.5 py-1 rounded-full text-[11px] font-mono text-[#12FF80]">
-                      <span className="w-2 h-2 rounded-full bg-[#12FF80] animate-pulse" />
+                    <div className="flex items-center space-x-1.5 bg-[#34D399]/20 border border-[#34D399]/40 px-2.5 py-1 rounded-full text-[11px] font-mono text-[#34D399]">
+                      <span className="w-2 h-2 rounded-full bg-[#34D399] animate-pulse" />
                       <span>Mezo Testnet</span>
                     </div>
                   </div>
 
                   {/* Address & Copy */}
                   <div>
-                    <span className="text-[11px] font-mono text-white/50 uppercase tracking-wider block">
+                    <span className="text-[11px] font-mono text-[#9A978F] uppercase tracking-wider block">
                       Wallet Address
                     </span>
                     <div className="flex items-center space-x-2 mt-1">
-                      <span className="font-mono font-bold text-lg tracking-tight text-white select-all break-all">
+                      <span className="font-mono font-bold text-lg tracking-tight text-[#F4F3EF] select-all break-all">
                         {formattedAddress}
                       </span>
                       <button
                         onClick={handleCopy}
-                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[#F4F3EF] transition-colors cursor-pointer"
                         title="Copy full address"
                       >
-                        {copied ? <Check className="w-3.5 h-3.5 text-[#12FF80]" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copied ? <Check className="w-3.5 h-3.5 text-[#34D399]" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
                       <a
                         href={`https://explorer.test.mezo.org/address/${address}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[#F4F3EF] transition-colors"
                         title="View on Mezo Explorer"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
@@ -639,24 +639,24 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
 
                   {/* Native Balance */}
                   <div className="pt-2 border-t border-white/10 flex justify-between items-center text-xs font-mono">
-                    <span className="text-white/60">Native Bitcoin (BTC):</span>
-                    <strong className="text-white font-mono text-sm">
+                    <span className="text-[#9A978F]">Native Bitcoin (BTC):</span>
+                    <strong className="text-[#F4F3EF] font-mono text-sm">
                       {btcBalance ? Number(formatEther(btcBalance.value)).toFixed(6) : '0.000000'} BTC
                     </strong>
                   </div>
                 </div>
               </div>
 
-              {/* SWITCH WALLET SECTION (Direct answer to user prompt: "give option to select what wallet") */}
+              {/* SWITCH WALLET SECTION */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <ArrowRightLeft className="w-4 h-4 text-[#E66C35]" />
-                    <h3 className="font-serif-display text-lg font-bold text-[#171715]">
+                    <ArrowRightLeft className="w-4 h-4 text-[#FF7A7A]" />
+                    <h3 className="font-serif-display text-lg font-bold text-[#F4F3EF]">
                       Switch to Another Wallet
                     </h3>
                   </div>
-                  <span className="text-[11px] font-mono text-[#77756F]">Select to switch</span>
+                  <span className="text-[11px] font-mono text-[#9A978F]">Select to switch</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -671,16 +671,16 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
                           key={connector.id}
                           onClick={() => handleSelectConnector(connector)}
                           disabled={isConnecting}
-                          className="flex items-center space-x-3 p-3 rounded-2xl border border-[#DEDBD3] hover:border-[#E66C35] bg-[#FBFAF7] hover:bg-[#F6F4EF] text-left transition-all group"
+                          className="flex items-center space-x-3 p-3 rounded-2xl border border-[#26252C] hover:border-[#D43838]/60 bg-[#0A0A0C] hover:bg-[#18181E] text-left transition-all group cursor-pointer"
                         >
-                          <div className="w-8 h-8 rounded-lg bg-white border border-[#DEDBD3] flex items-center justify-center p-1 shrink-0 group-hover:scale-105 transition-transform">
+                          <div className="w-8 h-8 rounded-lg bg-[#18181E] border border-[#26252C] flex items-center justify-center p-1 shrink-0 group-hover:scale-105 transition-transform">
                             {getWalletIcon(connector.name || connector.id, connector.icon, 'w-6 h-6')}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold text-[#171715] group-hover:text-[#E66C35] transition-colors truncate">
+                            <p className="text-xs font-semibold text-[#F4F3EF] group-hover:text-[#FF7A7A] transition-colors truncate">
                               {meta.displayName}
                             </p>
-                            <span className="text-[10px] text-[#77756F] font-mono block truncate">
+                            <span className="text-[10px] text-[#9A978F] font-mono block truncate">
                               {isPendingThis ? 'Connecting...' : meta.badge || 'Switch'}
                             </span>
                           </div>
@@ -691,11 +691,11 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
               </div>
 
               {/* DISCONNECT SECTION */}
-              <div className="pt-2 border-t border-[#DEDBD3] flex flex-col sm:flex-row items-center gap-3">
+              <div className="pt-2 border-t border-[#26252C] flex flex-col sm:flex-row items-center gap-3">
                 <button
                   onClick={handleDisconnect}
                   disabled={isDisconnecting}
-                  className="w-full sm:flex-1 py-3 px-4 rounded-2xl bg-[#C7473A]/10 hover:bg-[#C7473A] text-[#C7473A] hover:text-white border border-[#C7473A]/30 text-xs font-mono font-bold transition-all flex items-center justify-center space-x-2"
+                  className="w-full sm:flex-1 py-3 px-4 rounded-2xl bg-[#EF4444]/15 hover:bg-[#EF4444] text-[#EF4444] hover:text-white border border-[#EF4444]/40 text-xs font-mono font-bold transition-all flex items-center justify-center space-x-2 cursor-pointer shadow-xs"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Disconnect Wallet</span>
@@ -703,7 +703,7 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
 
                 <button
                   onClick={() => setMode('select')}
-                  className="w-full sm:w-auto py-3 px-4 rounded-2xl bg-[#F6F4EF] hover:bg-[#DEDBD3]/50 text-[#171715] border border-[#DEDBD3] text-xs font-mono font-medium transition-colors"
+                  className="w-full sm:w-auto py-3 px-4 rounded-2xl bg-[#18181E] hover:bg-[#22222B] text-[#F4F3EF] border border-[#26252C] text-xs font-mono font-medium transition-colors cursor-pointer"
                 >
                   Browse All Wallets
                 </button>
@@ -713,13 +713,13 @@ export function WalletModal({ isOpen, onClose, initialMode = 'select' }: WalletM
         </div>
 
         {/* MODAL FOOTER */}
-        <div className="px-6 py-3.5 bg-[#F6F4EF] border-t border-[#DEDBD3] flex items-center justify-between text-[11px] font-mono text-[#77756F]">
+        <div className="px-6 py-3.5 bg-[#0A0A0C] border-t border-[#26252C] flex items-center justify-between text-[11px] font-mono text-[#9A978F]">
           <span>Mezo Testnet • 31611</span>
           <a
             href="https://explorer.test.mezo.org"
             target="_blank"
             rel="noreferrer"
-            className="hover:text-[#171715] flex items-center space-x-1 underline"
+            className="hover:text-[#FF7A7A] flex items-center space-x-1 underline transition-colors"
           >
             <span>Mezo Explorer</span>
             <ExternalLink className="w-3 h-3" />

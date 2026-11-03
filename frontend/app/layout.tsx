@@ -28,11 +28,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;800&family=Instrument+Serif:ital@0;1&display=swap"
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-full flex flex-col bg-[#F6F4EF] text-[#171715] selection:bg-[#E66C35]/20 selection:text-[#E66C35]">
+      <body className="min-h-full flex flex-col bg-[#0A0A0C] text-[#F4F3EF] selection:bg-[#D43838]/30 selection:text-[#FFFFFF]">
         <Providers>{children}</Providers>
       </body>
     </html>
