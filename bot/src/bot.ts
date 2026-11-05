@@ -14,9 +14,31 @@ export class BitStreamfiBot {
     if (CONFIG.telegramToken && CONFIG.telegramToken !== 'YOUR_TELEGRAM_BOT_TOKEN_FROM_BOTFATHER') {
       this.bot = new TelegramBot(CONFIG.telegramToken, { polling: true });
       this.registerHandlers();
+      this.syncBotCommands();
       console.log('🤖 BitStreamfi Telegram Bot initialized with live polling.');
     } else {
       console.log('ℹ️ No Telegram Bot token provided. Running in simulation/CLI mode.');
+    }
+  }
+
+  private async syncBotCommands() {
+    if (!this.bot) return;
+    try {
+      await this.bot.setMyCommands([
+        { command: 'start', description: 'Start BitStreamfi Bot & overview' },
+        { command: 'oracle', description: 'Live on-chain BTC/USD PriceFeed' },
+        { command: 'trove', description: 'Check Trove health, collateral & ICR' },
+        { command: 'stream', description: 'Check payroll stream & claimable MUSD' },
+        { command: 'stake', description: 'Check MEZO Staking Tier & fee discounts' },
+        { command: 'simulate', description: 'Simulate BTC crash on Self-Healing Trove' },
+        { command: 'watch', description: 'Subscribe to 24/7 health & payday alerts' },
+        { command: 'unwatch', description: 'Stop watching an address (/unwatch all)' },
+        { command: 'stop', description: 'Stop all active 24/7 monitoring alerts' },
+        { command: 'help', description: 'Detailed command guide' },
+      ]);
+      console.log('✅ Telegram bot command menu registered with Telegram API.');
+    } catch (err: any) {
+      console.error('⚠️ Could not sync Telegram bot commands:', err.message);
     }
   }
 
