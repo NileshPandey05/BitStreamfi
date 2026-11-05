@@ -1,0 +1,35 @@
+{
+  "name": "bitstreamfi-telegram-bot",
+  "version": "1.0.0",
+  "description": "BitStreamfi Telegram Notification & Health Alert Bot on Mezo Network (Wave 2 Track 2)",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "demo": "tsx src/demo.ts",
+    "build": "tsc",
+    "test": "tsx src/demo.ts"
+  },
+  "keywords": [
+    "bitstreamfi",
+    "mezo",
+    "telegram-bot",
+    "musd",
+    "trove",
+    "payroll",
+    "web3"
+  ],
+  "author": "NileshPandey05",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "node-telegram-bot-api": "^0.66.0",
+    "viem": "^2.21.55"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/node-telegram-bot-api": "^0.64.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

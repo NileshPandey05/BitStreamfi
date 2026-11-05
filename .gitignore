@@ -9,6 +9,10 @@
 .env*
 *.env
 .private_key
+.private_key/
+private_key/
+*private_key*
+*.private_key*
 *.pem
 *.key
 *.secret
@@ -27,21 +31,21 @@ secrets/
 !frontend/app/favicon.ico
 !assets/hero-preview.png
 !frontend/public/hero-preview.png
-!frontend/public/images/edo_temple_stream_hero.jpg
 *.svg
 !frontend/public/*.svg
 akindo_*.png
 Screenshot_*.png
+*.report.json
 
 # ------------------------------------------------------------------------------
-# 3. Documentation, Specs, and Audit Reports (Keep only README.md files)
+# 3. Documentation, Specs, and Audit Reports (Keep ONLY README.md files)
 # ------------------------------------------------------------------------------
 *.md
 !README.md
-!WAVE2_NEW_IMPLEMENTATION_PROPOSAL.md
-!WAVE2_FULL_IMPLEMENTATION_PLAN.md
 frontend/*.md
 !frontend/README.md
+bot/*.md
+!bot/README.md
 research_docs/
 research/
 project_details.txt
@@ -94,8 +98,9 @@ broadcast/DeployFull.s.sol/
 .next/
 vault-build/
 node_modules/
-package.json
-package-lock.json
+/package.json
+/package-lock.json
+bot/dist/
 .agents/
 skills-lock.json
 .merkle_cache/

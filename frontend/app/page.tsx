@@ -252,6 +252,29 @@ export default function Home() {
     args: address ? [address] : undefined,
   });
 
+  // Target Borrower Live Status for Keeper Liquidation Console
+  const isValidLiquidateUser = Boolean(liquidateUser && isAddress(liquidateUser));
+  const isLiquidatingSelf = Boolean(
+    address && liquidateUser && isAddress(liquidateUser) && liquidateUser.toLowerCase() === address.toLowerCase()
+  );
+
+  const { data: targetBorrowerDebtRaw, refetch: refetchTargetBorrowerDebt } = useReadContract({
+    address: CONTRACT_ADDRESSES.vault,
+    abi: VAULT_ABI,
+    functionName: 'borrowedMUSD',
+    args: isValidLiquidateUser ? [liquidateUser as `0x${string}`] : undefined,
+  });
+
+  const { data: targetIsLiquidatableRaw, refetch: refetchTargetIsLiquidatable } = useReadContract({
+    address: CONTRACT_ADDRESSES.vault,
+    abi: VAULT_ABI,
+    functionName: 'isLiquidatable',
+    args: isValidLiquidateUser ? [liquidateUser as `0x${string}`] : undefined,
+  });
+
+  const targetBorrowerDebt = targetBorrowerDebtRaw ? Number(formatEther(targetBorrowerDebtRaw as bigint)) : 0;
+  const targetIsLiquidatable = Boolean(targetIsLiquidatableRaw);
+
   // Mezo Protocol BorrowerOperations Trove Composition
   const { data: mezoTroveData, refetch: refetchMezoTrove } = useReadContract({
     address: CONTRACT_ADDRESSES.vault,
@@ -506,6 +529,7 @@ export default function Home() {
   const isVaultApproved = vaultAllowanceEth >= (Number(repayAmount) || 1);
   const isCreditEngineApproved = creditEngineAllowanceEth >= (Number(yieldDepositAmount) || 1);
   const isTbtcApproved = tbtcAllowanceEth >= (Number(collateralAmount) || 1);
+  const isLiquidateApproved = vaultAllowanceEth >= (Number(liquidateDebtAmount) || 1);
 
   // Simulator Preset Switcher (Real Mezo Testnet Positions)
   const applySimPreset = (preset: 'borrower1' | 'vaultTrove' | 'wallet' | 'custom') => {
@@ -611,6 +635,11 @@ export default function Home() {
   const handleExecuteKeeperLiquidation = async (trove: ArenaTrove) => {
     if (!address) {
       setStatusMessage('Please connect your wallet to execute keeper liquidations on Mezo Testnet.');
+      setTxStatus('failed');
+      return;
+    }
+    if (address && trove.borrower.toLowerCase() === address.toLowerCase()) {
+      setStatusMessage('⚠️ Cannot liquidate your own Trove. The smart contract requires user != msg.sender. To repay your own debt, use "Repay Debt" in Tab 2.');
       setTxStatus('failed');
       return;
     }
@@ -977,6 +1006,26 @@ export default function Home() {
       setStatusMessage('Invalid borrower address format.');
       return;
     }
+    if (address && liquidateUser.toLowerCase() === address.toLowerCase()) {
+      setTxStatus('failed');
+      setStatusMessage('⚠️ Cannot liquidate yourself. The smart contract enforces user != msg.sender. To repay your own debt, use "Repay Debt" above.');
+      return;
+    }
+    if (targetBorrowerDebtRaw !== undefined && (targetBorrowerDebtRaw as bigint) === 0n) {
+      setTxStatus('failed');
+      setStatusMessage('ℹ️ Target borrower has 0 debt on Mezo Testnet. There is nothing to liquidate.');
+      return;
+    }
+    if (targetIsLiquidatableRaw !== undefined && !targetIsLiquidatableRaw) {
+      setTxStatus('failed');
+      setStatusMessage('🛡️ Position is healthy (ICR >= 133.3%). The smart contract reverts with "Position not liquidatable" to protect safe borrower collateral.');
+      return;
+    }
+    if (targetBorrowerDebtRaw && parseEther(liquidateDebtAmount) > (targetBorrowerDebtRaw as bigint)) {
+      setTxStatus('failed');
+      setStatusMessage(`⚠️ Debt to repay exceeds borrower debt (${targetBorrowerDebt.toFixed(2)} MUSD).`);
+      return;
+    }
     executeTx({
       actionType: 'liquidate',
       title: 'Liquidate Position',
@@ -992,6 +1041,8 @@ export default function Home() {
         refetchDebt();
         refetchCollateral();
         refetchMusd();
+        refetchTargetBorrowerDebt();
+        refetchTargetIsLiquidatable();
       },
     });
   };
@@ -1000,6 +1051,11 @@ export default function Home() {
   const handleAutoHealTrove = (e: React.FormEvent) => {
     e.preventDefault();
     if (isWrongNetwork || !address) return;
+    if (!isAutoHealEligible) {
+      setTxStatus('failed');
+      setStatusMessage('🛡️ Trove is currently healthy (ICR > 150%). Auto-Heal is armed on-chain and triggers when market volatility drops ICR below 150%. To test simulated shocks, navigate to Tab 5 (Simulator & Risk Arena).');
+      return;
+    }
     executeTx({
       actionType: 'auto_heal_trove',
       title: 'Auto-Heal Trove',
@@ -1406,7 +1462,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0A0A0C] text-[#F4F3EF] flex flex-col font-sans selection:bg-[#D43838]/30 selection:text-[#FFFFFF]">
+    <main className="min-h-screen bg-[#F7F5F0] text-[#191816] flex flex-col font-sans selection:bg-[#C85A27]/20 selection:text-[#C85A27]">
       {/* HEADER & WRONG NETWORK WARNING */}
       <Header
         mounted={mounted}
@@ -1531,6 +1587,11 @@ export default function Home() {
             setLiquidateSeizeNative={setLiquidateSeizeNative}
             handleLiquidate={handleLiquidate}
             formatEther={formatEther}
+            address={address}
+            targetBorrowerDebt={targetBorrowerDebt}
+            targetIsLiquidatable={targetIsLiquidatable}
+            isLiquidatingSelf={isLiquidatingSelf}
+            isLiquidateApproved={isLiquidateApproved}
           />
         )}
 

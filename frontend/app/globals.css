@@ -1,47 +1,61 @@
 @import "tailwindcss";
 
 :root {
-  --paper: #0A0A0C;
-  --surface: #121216;
-  --surface-hover: #18181E;
-  --ink: #F4F3EF;
-  --secondary: #9A978F;
-  --rule: #26252C;
-  --vermilion: #D43838;
-  --vermilion-hover: #E24A4A;
-  --vermilion-dim: rgba(212, 56, 56, 0.15);
-  --gold: #C5A059;
-  --healthy: #34D399;
-  --caution: #F59E0B;
-  --danger: #EF4444;
+  --paper: #F7F5F0;
+  --paper-soft: #F0EDE5;
+  --surface: #FFFFFF;
+  --surface-muted: #FAF8F5;
+  --ink: #191816;
+  --ink-secondary: #5C5851;
+  --ink-muted: #8C877D;
+  --rule: #E2DFD7;
+  --rule-subtle: #ECE8E0;
+  --copper: #C85A27;
+  --copper-hover: #B24E1F;
+  --copper-light: #FBF0E9;
+  --healthy: #1F7A4D;
+  --healthy-soft: #EBF7F0;
+  --caution: #B7791F;
+  --danger: #BA3A30;
 }
 
 body {
   background-color: var(--paper);
   color: var(--ink);
   font-family: var(--font-geist-sans), sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .font-serif-display {
-  font-family: 'Instrument Serif', 'Cinzel', serif;
+  font-family: 'Instrument Serif', serif;
 }
 
 .font-mono-data {
   font-family: var(--font-geist-mono), monospace;
 }
 
-/* Custom scrollbar */
+/* Hide scrollbar for clean tab horizontal scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom subtle scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--paper);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--rule);
-  border-radius: 3px;
+  background: #D5D1C7;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--secondary);
+  background: #B5B0A4;
 }

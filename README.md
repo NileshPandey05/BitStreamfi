@@ -12,6 +12,14 @@
 
 <br/>
 
+[![Live App](https://img.shields.io/badge/Live%20App-bit--streamfi.vercel.app-258454?style=for-the-badge&logo=vercel&logoColor=white)](https://bit-streamfi.vercel.app/)
+[![YouTube Demo](https://img.shields.io/badge/YouTube-Watch%20Demo%20Video-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/I5Upty2PRBE)
+[![Pitch Deck](https://img.shields.io/badge/Pitch%20Deck-Google%20Slides-4285F4?style=for-the-badge&logo=google-slides&logoColor=white)](https://docs.google.com/presentation/d/1L3tcfUC-Sam7XMh7fmLMl0icIo-Bfc7SI_IXfajlVaM/edit?usp=sharing)
+[![Telegram Bot](https://img.shields.io/badge/Telegram-@BitStreamfiBot-229ED9?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/BitStreamfiBot)
+
+<br/>
+<br/>
+
 <img src="assets/hero-preview.png" alt="BitStreamfi Precision Engine UI" width="100%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);" />
 
 <br/>
@@ -34,27 +42,30 @@ Instead of liquidating Bitcoin to pay salaries or finance operations, organizati
 
 ## 🏛️ Core Protocol Pillars
 
-### 1. 🏦 MezoFlowVault (Collateral & Credit Vault)
-- **Native & Wrapped BTC Collateral**: Deposit native BTC or tBTC into a secure, reentrancy-guarded smart contract vault.
-- **60% Max Loan-to-Value (LTV)**: Non-custodial borrowing of MUSD stablecoins up to 6,000 basis points (60%) of the collateral valuation.
-- **Dynamic Liquidity Management**: Repay debt anytime or withdraw excess collateral while maintaining safety boundaries.
+### 1. 🏦 MezoFlowVault (Composable BorrowerOperations & Trove Core)
+- **Mezo BorrowerOperations Composition**: The vault directly interacts with Mezo's native `BorrowerOperations` and live `PriceFeed` oracle ($78k+ dynamic pricing) rather than simulated accounting.
+- **Strict Collateral Segregation**: Native BTC and tBTC collateral positions are segregated into independent internal balances, eliminating accounting leakage.
+- **Keeper Liquidation Console**: Positions with Individual Collateral Ratio (ICR) below 133.3% can be liquidated by any decentralized keeper for a 5% collateral incentive, maintaining protocol solvency.
 
-### 2. ⏳ PayrollStreamer (Continuous Second-by-Second Streaming)
-- **Linear Escrow Streaming**: Salaries flow continuously into an escrow contract. Balance accrues to the payee with every second that passes:
-  $$\text{Vested Amount} = \frac{\text{Deposit Amount} \times (\text{Current Time} - \text{Start Time})}{\text{Total Duration}}$$
-- **Recipient-Gated Withdrawals**: Only the designated worker address can withdraw vested funds, protecting employee earnings.
-- **Flexible Lifecycle Management**: Employers can top-up active streams with additional funds or cancel unvested portions with automated refunds.
-- **Stream Discovery**: Built-in contract inspection allows users to instantly discover and select any stream ID on-chain.
+### 2. ⏳ PayrollStreamer & Automated Stream Splitter
+- **Continuous Second-by-Second Streaming**: Salaries flow continuously into an escrow contract. Balance vests per second to the payee in real-time.
+- **Automated Stream Splitter**: Workers can automatically route an inbound stream split (e.g., 70% to everyday spending wallet, 30% directly into the SelfRepayingCreditEngine for automated debt amortization).
+- **Recipient-Gated Withdrawals**: Only the designated worker address can withdraw vested funds.
+- **Lifecycle Management**: Employers can top-up streams with additional MUSD or cancel unvested portions with automated refunds.
 
-### 3. 🔄 SelfRepayingCreditEngine (Autonomous Debt Amortization)
-- **Yield Redirection**: Yield and liquidity reserves can be deposited into the credit engine.
-- **Automated Debt Reduction**: Calling `amortizeDebt(user, amount)` uses deposited yield to repay debt principal in `MezoFlowVault`, allowing borrowers to clear obligations without touching principal capital.
-- **Reclaimable Yield**: Users can reclaim unamortized yield at any time via `withdrawYield(amount)`.
+### 3. 🔄 SelfRepayingCreditEngine & Proof-of-HODL Staking Boost
+- **Autonomous Debt Reduction**: Calling `amortizeDebt(user, amount)` uses deposited yield to repay debt principal in `MezoFlowVault`, clearing obligations without out-of-pocket capital.
+- **MezoStakingBoost Integration**: Users can stake MEZO governance tokens to boost yield accrual rates and accelerate loan payoff.
+- **Fully Reclaimable Yield**: Users can reclaim unamortized yield at any time via `withdrawYield(amount)` — zero locked or stranded funds.
 
-### 4. ⚡ Live Activity & Blockscout Verification
-- **Zero Premature Confirmation**: Form submissions poll genuine on-chain transaction receipts via `publicClient.waitForTransactionReceipt`.
-- **Persistent Local History**: Activity logs are synchronized with `localStorage` so transactions remain visible across page refreshes.
-- **Direct Blockscout Integration**: Every transaction links directly to verified explorer records on Mezo L2 without format truncation errors.
+### 4. 🤖 24/7 Telegram Alert & Monitoring Bot (@BitStreamfiBot)
+- **Live Health Monitoring**: Continuously monitors Trove health, liquidation hazard zones, stream creations, and withdrawals on Mezo Testnet.
+- **Interactive Commands**: `/health <address>`, `/stream <id>`, `/rates`, `/stats`, and automated keeper liquidation pings.
+
+### 5. ⚡ Live Activity & Explorer Verification
+- **Zero Premature Confirmation**: All UI interactions await confirmed on-chain receipts via `publicClient.waitForTransactionReceipt`.
+- **Persistent Local History**: Activity logs are synchronized with `localStorage` so transactions remain visible across sessions.
+- **Direct Blockscout Integration**: Every transaction links directly to verified explorer records on Mezo L2.
 
 ---
 
@@ -64,13 +75,15 @@ All protocol smart contracts are deployed and verified on **Mezo Testnet**:
 
 | Contract Name | Deployed Address | Network / Explorer Link | Status |
 |:---|:---|:---|:---:|
-| **MezoFlowVault** | `0x9b7623CD6287722C8B91dBd2Ea67AC3f09809c85` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0x9b7623CD6287722C8B91dBd2Ea67AC3f09809c85) | **Active & Verified** 🟢 |
-| **PayrollStreamer** | `0xfF1900d91E76beB66a9163b42cae1c2A0BeDbF00` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0xfF1900d91E76beB66a9163b42cae1c2A0BeDbF00) | **Active & Verified** 🟢 |
-| **SelfRepayingCreditEngine** | `0x53644ed38383058DE2aCf88a4b37AFC34837800E` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0x53644ed38383058DE2aCf88a4b37AFC34837800E) | **Active & Verified** 🟢 |
+| **MezoFlowVault** | `0x669dBAd6F813CDeCa14e1A46AB91c95017603f85` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0x669dBAd6F813CDeCa14e1A46AB91c95017603f85) | **Active & Verified** 🟢 |
+| **PayrollStreamer** | `0xC3C2c3113898b8FF4eeAedC992E6f34A6f7d9b0C` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0xC3C2c3113898b8FF4eeAedC992E6f34A6f7d9b0C) | **Active & Verified** 🟢 |
+| **SelfRepayingCreditEngine** | `0xE1e310cCd8b1295cBbE9CD76411EaF54879c0A6F` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0xE1e310cCd8b1295cBbE9CD76411EaF54879c0A6F) | **Active & Verified** 🟢 |
+| **MezoStakingBoost** | `0x92678d0A29a183e194c7496EF9f043b422746EDf` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0x92678d0A29a183e194c7496EF9f043b422746EDf) | **Active & Verified** 🟢 |
 | **MUSD Stablecoin (Official Mezo)** | `0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503` | [View on Mezo Explorer](https://explorer.test.mezo.org/token/0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503) | **Official Stablecoin** 🪙 |
 | **Test tBTC (with Faucet)** | `0xd82C1e865efD488Fd0C9AA3276D236Eae3fD77Ae` | [View on Mezo Explorer](https://explorer.test.mezo.org/token/0xd82C1e865efD488Fd0C9AA3276D236Eae3fD77Ae) | **Collateral Token** ₿ |
+| **MEZO Governance Token** | `0x7B7c000000000000000000000000000000000001` | [View on Mezo Explorer](https://explorer.test.mezo.org/token/0x7B7c000000000000000000000000000000000001) | **Official MEZO** ⚡ |
 | **Mezo PriceFeed Oracle** | `0x86bCF0841622a5dAC14A313a15f96A95421b9366` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0x86bCF0841622a5dAC14A313a15f96A95421b9366) | **Live PriceFeed** 📊 |
-| **Mezo BorrowerOperations** | `0xCdF7028ceAB81fA0C6971208e83fa7872994beE5` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0xCdF7028ceAB81fA0C6971208e83fa7872994beE5) | **Trove Core** ⚙️ |
+| **Mezo BorrowerOperations** | `0xCdF7028ceAB81fA0C6971208e83fa7872994beE5` | [View on Mezo Explorer](https://explorer.test.mezo.org/address/0xCdF7028ceAB81fA0C6971208e83fa7872994beE5) | **Trove Core** ⚙ |
 
 ---
 
@@ -93,7 +106,7 @@ All protocol smart contracts are deployed and verified on **Mezo Testnet**:
        ▼                          │                          │
  ┌──────────────────────┐         │                          │
  │    MezoFlowVault     │◄────────┤ Mezo PriceFeed Oracle    │
- │ (0x9b76...9c85)      │         │ ($78k+ Live Price)       │
+ │ (0x669d...3f85)      │         │ ($78k+ Live Price)       │
  └──────────┬───────────┘         │                          │
             │                     │                          │
             │ Opens/Adjusts Trove │                          │
@@ -107,16 +120,16 @@ All protocol smart contracts are deployed and verified on **Mezo Testnet**:
             ▼                     │                          │
  ┌──────────────────────┐         │                          │
  │   PayrollStreamer    │─────────┼──────────────────────────┘
- │ (0xfF19...bF00)      │         │  3. Real-Time MUSD Stream (sec by sec)
- └──────────────────────┘         │
-            ▲                     │
-            │ 4. Yield Deposits   ▼
- ┌──────────┴───────────┐  ┌─────────────┐
- │ SelfRepayingCredit   │◄─┤ Yield /     │
- │ Engine               │  │ Reserves    │
- │ (0x5364...800E)      │  └─────────────┘
- └──────────────────────┘
-   5. Amortizes Vault Debt
+ │ (0xC3C2...9b0C)      │         │  3. Real-Time MUSD Stream (sec by sec)
+ └──────────┬───────────┘         │
+            │                     │
+            │ Stream Splitter     │
+            ▼                     │
+ ┌──────────────────────┐  ┌─────────────┐
+ │ SelfRepayingCredit   │◄─┤ MEZO Stake  │ (0x9267...6EDf)
+ │ Engine (0xE1e3...0A6F│  │ Yield Boost │
+ └──────────────────────┘  └─────────────┘
+   4. Auto-Amortizes Vault Debt
       (Reclaimable via withdrawYield)
 ```
 
@@ -164,6 +177,15 @@ npm install
 npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) (or [http://localhost:3001](http://localhost:3001)) in your browser.
+
+### 4. Run the 24/7 Telegram Alert Bot
+```bash
+cd bot
+npm install
+cp .env.example .env # Add your TELEGRAM_BOT_TOKEN
+npm run build
+npm start
+```
 
 ---
 
