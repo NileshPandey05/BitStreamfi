@@ -33,7 +33,9 @@ BitStreamfi's Telegram Alert Bot connects workers and employers on Mezo Network 
 | `/stream` | `<streamId>` | Visualizes salary stream progress bar, vested claimable MUSD, and accrual rate. |
 | `/stake` | `<address>` | Shows MEZO tokens staked, Tier status (Bronze/Silver/Gold), and fee discounts. |
 | `/simulate` | `<drop%> [addr]` | Simulates a market crash and verifies autonomous Self-Healing intervention. |
-| `/watch` | `<address>` | Subscribes your Telegram chat to automated on-chain alerts. |
+| `/watch` | `<address>` | Subscribes your Telegram chat to 24/7 on-chain alerts. |
+| `/unwatch` | `<address\|all>` | Unsubscribes from an address or stops all subscriptions. |
+| `/stop` | *none* | Immediately stops all 24/7 monitoring alerts. |
 | `/help` | *none* | Displays the command guide. |
 
 ---

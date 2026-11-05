@@ -37,7 +37,9 @@ I monitor on-chain Bitcoin collateral, continuous MUSD payroll streams, and auto
 • /stream <id> — Check real-time payroll stream & claimable salary
 • /stake <address> — Check MEZO Staking Tier & fee discounts
 • /simulate <drop%> <address> — Stress-test a Trove against a BTC crash
-• /watch <address> — Subscribe to health & payday alerts
+• /watch <address> — Subscribe to 24/7 health & payday alerts
+• /unwatch <address|all> — Unsubscribe from alerts
+• /stop — Stop all active 24/7 monitoring alerts
 • /help — Full command manual
       `;
       this.bot?.sendMessage(chatId, text, { parse_mode: 'Markdown' });
@@ -66,6 +68,12 @@ I monitor on-chain Bitcoin collateral, continuous MUSD payroll streams, and auto
 
 • \`/watch 0x...\`
   Enables 24/7 background alerts for your Trove and streams.
+
+• \`/unwatch 0x...\` or \`/unwatch all\`
+  Stops watching a specific address or clears all subscriptions.
+
+• \`/stop\`
+  Immediately terminates all active monitoring alerts for this chat.
       `;
       this.bot?.sendMessage(chatId, text, { parse_mode: 'Markdown' });
     });
@@ -248,9 +256,45 @@ I monitor on-chain Bitcoin collateral, continuous MUSD payroll streams, and auto
 
       this.bot?.sendMessage(
         chatId,
-        `🔔 *Subscription Active!*\nYou will receive alerts whenever Trove health changes or salary streams are claimed for:\n\`${addr}\``,
+        `🔔 *Subscription Active!*\nYou will receive alerts whenever Trove health changes or salary streams are claimed for:\n\`${addr}\`\n\nTo stop anytime, type \`/unwatch ${addr}\` or \`/stop\``,
         { parse_mode: 'Markdown' }
       );
+    });
+
+    // /unwatch <address> or /unwatch all
+    this.bot.onText(/\/unwatch(?:\s+(.+))?/, (msg, match) => {
+      const chatId = msg.chat.id;
+      const target = (match?.[1] || '').trim().toLowerCase();
+
+      if (!this.subscribers.has(chatId) || this.subscribers.get(chatId)!.size === 0) {
+        this.bot?.sendMessage(chatId, 'ℹ️ You have no active subscriptions to stop.');
+        return;
+      }
+
+      const userSubs = this.subscribers.get(chatId)!;
+
+      if (!target || target === 'all') {
+        const count = userSubs.size;
+        userSubs.clear();
+        this.bot?.sendMessage(chatId, `🔕 *Stopped Alerts!* Cleared all ${count} watched address(es).`, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      if (userSubs.has(target)) {
+        userSubs.delete(target);
+        this.bot?.sendMessage(chatId, `🔕 *Unwatched!* Stopped 24/7 alerts for:\n\`${target}\``, { parse_mode: 'Markdown' });
+      } else {
+        this.bot?.sendMessage(chatId, `⚠️ You were not watching \`${target}\`. Active watched addresses: ${Array.from(userSubs).map(a => `\`${a.slice(0, 8)}...\``).join(', ')}`, { parse_mode: 'Markdown' });
+      }
+    });
+
+    // /stop
+    this.bot.onText(/\/stop/, (msg) => {
+      const chatId = msg.chat.id;
+      if (this.subscribers.has(chatId)) {
+        this.subscribers.get(chatId)!.clear();
+      }
+      this.bot?.sendMessage(chatId, '🔕 *All 24/7 monitoring alerts stopped.* You can re-enable anytime with `/watch <address>`.', { parse_mode: 'Markdown' });
     });
   }
 
