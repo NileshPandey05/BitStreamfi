@@ -23,20 +23,24 @@ export class BitStreamfiBot {
 
   private async syncBotCommands() {
     if (!this.bot) return;
+    const commands = [
+      { command: 'start', description: 'Start BitStreamfi Bot & overview' },
+      { command: 'oracle', description: 'Live on-chain BTC/USD PriceFeed' },
+      { command: 'trove', description: 'Check Trove health, collateral & ICR' },
+      { command: 'stream', description: 'Check payroll stream & claimable MUSD' },
+      { command: 'stake', description: 'Check MEZO Staking Tier & fee discounts' },
+      { command: 'simulate', description: 'Simulate BTC crash on Self-Healing Trove' },
+      { command: 'watch', description: 'Subscribe to 24/7 health & payday alerts' },
+      { command: 'unwatch', description: 'Stop watching an address (/unwatch all)' },
+      { command: 'stop', description: 'Stop all active 24/7 monitoring alerts' },
+      { command: 'help', description: 'Detailed command guide' },
+    ];
+
     try {
-      await this.bot.setMyCommands([
-        { command: 'start', description: 'Start BitStreamfi Bot & overview' },
-        { command: 'oracle', description: 'Live on-chain BTC/USD PriceFeed' },
-        { command: 'trove', description: 'Check Trove health, collateral & ICR' },
-        { command: 'stream', description: 'Check payroll stream & claimable MUSD' },
-        { command: 'stake', description: 'Check MEZO Staking Tier & fee discounts' },
-        { command: 'simulate', description: 'Simulate BTC crash on Self-Healing Trove' },
-        { command: 'watch', description: 'Subscribe to 24/7 health & payday alerts' },
-        { command: 'unwatch', description: 'Stop watching an address (/unwatch all)' },
-        { command: 'stop', description: 'Stop all active 24/7 monitoring alerts' },
-        { command: 'help', description: 'Detailed command guide' },
-      ]);
-      console.log('✅ Telegram bot command menu registered with Telegram API.');
+      await this.bot.setMyCommands(commands, { scope: { type: 'default' } });
+      await this.bot.setMyCommands(commands, { scope: { type: 'all_private_chats' } });
+      await this.bot.setMyCommands(commands, { scope: { type: 'all_group_chats' } });
+      console.log('✅ Telegram bot command menu registered across all scopes.');
     } catch (err: any) {
       console.error('⚠️ Could not sync Telegram bot commands:', err.message);
     }
